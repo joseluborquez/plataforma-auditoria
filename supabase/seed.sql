@@ -70,6 +70,12 @@ begin
     (c, pr2, 'Planilla de turnos conectada a WhatsApp', 'mediano_plazo', 'media', 'pendiente', '3 semanas', null),
     (c, null, 'Capacitación general al equipo', 'largo_plazo', 'baja', 'pendiente', '1 semana', null);
 
+  insert into public.risk_reviews (roadmap_item_id, datos_personales, decide_sobre_personas, supervision_humana, registro_trazabilidad, datos_salen_del_pais, plan_reversa, responsable_definido, responsable_cliente, controles, nivel, notas)
+  select id, true, true, true, false, false, true, true, 'Jefatura de RRHH (ficticio)',
+         '{"exactitud": true, "autorizacion": true, "excepciones": false, "cambios": false, "credenciales": true, "continuidad": false}'::jsonb,
+         'medio', 'Revisión de ejemplo (ficticia).'
+  from public.roadmap_items where client_id = c and titulo = 'Automatizar cálculo de liquidaciones';
+
   insert into public.documents (client_id, area_id, nombre, ruta_storage, confidencial) values
     (c, a_rrhh, 'Mapa de procesos RRHH (ficticio)', c::text || '/ejemplo-mapa.pdf', false),
     (c, null, 'Contrato (ficticio, confidencial)', c::text || '/ejemplo-contrato.pdf', true);

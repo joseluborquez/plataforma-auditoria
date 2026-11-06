@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   ["", "Resumen"], ["/guion", "Guion"], ["/entrevistas", "Entrevistas"], ["/procesos", "Procesos"], ["/mediciones", "Mediciones"],
-  ["/priorizacion", "Priorización"], ["/hoja-de-ruta", "Hoja de ruta"], ["/documentos", "Documentos"], ["/horas", "Horas"],
+  ["/priorizacion", "Priorización"], ["/hoja-de-ruta", "Hoja de ruta"], ["/riesgos", "Riesgos"], ["/documentos", "Documentos"], ["/horas", "Horas"],
 ] as const;
 
 export function ClientTabs({ clientId }: { clientId: string }) {

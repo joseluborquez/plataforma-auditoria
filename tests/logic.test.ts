@@ -116,3 +116,42 @@ describe("rúbrica", () => {
     for (const r of RUBRIC) expect([r.uno, r.tres, r.cinco].every((t) => t.length > 10)).toBe(true);
   });
 });
+
+import { assessRisk, controlsDone, RISK_QUESTIONS } from "@/lib/risk";
+import { methodology } from "@/lib/methodology";
+describe("riesgo de automatización", () => {
+  const seguro = { datos_personales: false, decide_sobre_personas: false, supervision_humana: true, registro_trazabilidad: true, datos_salen_del_pais: false, plan_reversa: true, responsable_definido: true };
+  it("bajo cuando hay controles y no hay datos sensibles", () => {
+    expect(assessRisk(seguro).nivel).toBe("bajo");
+  });
+  it("alto si decide sobre personas sin supervisión humana", () => {
+    const r = assessRisk({ ...seguro, decide_sobre_personas: true, supervision_humana: false });
+    expect(r.nivel).toBe("alto");
+    expect(r.acciones.length).toBeGreaterThan(0);
+  });
+  it("medio con varios factores moderados", () => {
+    expect(assessRisk({ ...seguro, datos_personales: true, datos_salen_del_pais: true, plan_reversa: false }).nivel).toBe("medio");
+  });
+  it("usar IA suma puntaje", () => {
+    expect(assessRisk(seguro, true).puntaje).toBe(assessRisk(seguro, false).puntaje + 1);
+  });
+  it("todo en contra es alto", () => {
+    const peor = { datos_personales: true, decide_sobre_personas: true, supervision_humana: false, registro_trazabilidad: false, datos_salen_del_pais: true, plan_reversa: false, responsable_definido: false };
+    expect(assessRisk(peor, true).nivel).toBe("alto");
+  });
+  it("cuenta controles cumplidos", () => {
+    expect(controlsDone({ exactitud: true, autorizacion: false, cambios: true })).toBe(2);
+    expect(controlsDone(null)).toBe(0);
+  });
+  it("las preguntas cubren todos los campos", () => {
+    expect(RISK_QUESTIONS.map((q) => q.key).sort()).toEqual(Object.keys(seguro).sort());
+  });
+});
+describe("metodología", () => {
+  it("nombra al cliente, declara independencia y no certifica", () => {
+    const t = JSON.stringify(methodology("Cliente X"));
+    expect(t).toContain("Cliente X");
+    expect(t).toContain("Independencia");
+    expect(t).toContain("no constituye una certificación");
+  });
+});

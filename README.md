@@ -36,6 +36,13 @@ Importa el repo de GitHub, define las dos variables `NEXT_PUBLIC_*` y despliega.
 5. **Mediciones:** se registran como declaradas, cronometradas o de registro del sistema, con rango mínimo-máximo. El reporte avisa cuando una comparación se basa en tiempos declarados.
 6. **Rúbrica de puntuación** (`lib/rubric.ts`): 1, 3 y 5 definidos para cada criterio; visible en la ficha y en el Guion.
 
+## Revisión de riesgo, controles y alcance
+- **Pestaña Riesgos:** tamizaje por ítem de la hoja de ruta (datos personales, decisiones sobre personas, supervisión humana, trazabilidad, transferencia de datos, plan de reversa, responsable) y ficha de 6 controles de la automatización. Calcula un nivel bajo/medio/alto y sugiere acciones. Reglas en `lib/risk.ts`.
+- Alineada con NIST AI RMF 1.0 e ISO/IEC 23894 como **referencia**. Es apoyo a la decisión, no certificación ni evaluación legal.
+- El cliente ve solo el **nivel** de riesgo en el reporte; las respuestas, el responsable y las notas son privados.
+- El reporte incluye la sección **Alcance, método y limitaciones** con declaración de independencia (audita e implementa). Texto en `lib/methodology.ts`: **hazlo revisar por un abogado o especialista en auditoría antes de usarlo con el cliente.**
+- Pendiente de validar con asesoría legal: Ley 21.719 de datos personales (vigencia fijada para el 1-dic-2026, con un proyecto que la posterga) y el proyecto de ley de IA en el Senado.
+
 ## Para después (no está en el MVP)
 Costo por hora por cargo y ahorro en CLP · Costo de implementación y recuperación por ítem de la hoja de ruta · Hallazgos estructurados · Mostrar solo procesos validados en el reporte · Varios encargados por área · historial de puntuaciones · PDF nativo · notificaciones · carga masiva · gráficos avanzados · cobros/planes/chat/IA (fuera de alcance).
 

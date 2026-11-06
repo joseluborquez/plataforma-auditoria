@@ -6,6 +6,7 @@ import { formatDate, formatMinutes } from "@/lib/format";
 import { DATA_STATE, DECISION, PHASE, PRIORITY, RM_STATUS } from "@/lib/labels";
 import { compare } from "@/lib/measurements";
 import { quadrantOf, QUADRANT_LABEL } from "@/lib/scoring";
+import { methodology } from "@/lib/methodology";
 import type { Area, DocumentRow, Measurement, Phase, ReportProcess, RoadmapItem, Score } from "@/lib/types";
 import { PrintButton } from "@/components/print-button";
 import { logout } from "@/app/login/actions";
@@ -142,6 +143,7 @@ export default async function ReportePage({ params }: PageProps<"/reporte/[clien
                       <p className="font-medium">{r.titulo}</p>
                       <p className="text-xs text-muted-foreground">
                         {PRIORITY[r.prioridad]} · {RM_STATUS[r.estado]}{r.esfuerzo_estimado ? ` · ${r.esfuerzo_estimado}` : ""}{r.process_id ? ` · ${procName[r.process_id] ?? ""}` : ""}
+                        {` · Riesgo: ${r.nivel_riesgo ?? "pendiente de revisión"}`}
                       </p>
                     </li>
                   ))}
@@ -152,9 +154,19 @@ export default async function ReportePage({ params }: PageProps<"/reporte/[clien
         )}
       </section>
 
+      <section className="print-break space-y-4">
+        <h2 className="text-lg font-semibold">4. Alcance, método y limitaciones</h2>
+        {methodology(client.nombre).map((sec) => (
+          <div key={sec.titulo} className="break-inside-avoid">
+            <h3 className="mb-1 text-sm font-medium text-muted-foreground">{sec.titulo}</h3>
+            <ul className="list-disc space-y-1 pl-5 text-sm">{sec.items.map((t) => <li key={t}>{t}</li>)}</ul>
+          </div>
+        ))}
+      </section>
+
       {docs.length > 0 && (
         <section className="no-print">
-          <h2 className="mb-3 text-lg font-semibold">4. Documentos</h2>
+          <h2 className="mb-3 text-lg font-semibold">5. Documentos</h2>
           <ul className="space-y-1 text-sm">
             {docs.map((d) => (
               <li key={d.id}>{urlOf.get(d.ruta_storage)

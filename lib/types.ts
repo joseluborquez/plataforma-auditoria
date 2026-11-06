@@ -52,6 +52,7 @@ export type Score = {
 export type RoadmapItem = {
   id: string; client_id: string; process_id: string | null; titulo: string; fase: Phase;
   prioridad: Priority; estado: RmStatus; esfuerzo_estimado: string | null; notas?: string | null;
+  nivel_riesgo?: "bajo" | "medio" | "alto" | null;
 };
 export type DocumentRow = {
   id: string; client_id: string; area_id: string | null; nombre: string;
