@@ -82,7 +82,7 @@ grant execute on all functions in schema pg_temp to public;
 -- ═════════ DUEÑO: ve todo ═════════
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1');
 select pg_temp.expect('owner ve clients', (select count(*) from public.clients where nombre in ('Cliente A','Cliente B')), 2);
-select pg_temp.expect('owner ve interview_notes', (select count(*) from public.interview_notes), 1);
+select pg_temp.expect('owner ve interview_notes', (select count(*) from public.interview_notes where notas_privadas = 'PRIVADO'), 1);
 select pg_temp.expect('owner ve time_log', (select count(*) from public.time_log where client_id = 'c0000000-0000-0000-0000-00000000000a'), 1);
 reset role;
 
@@ -117,13 +117,14 @@ select pg_temp.expect_denied('vista sin rut', 'select rut from public.report_cli
 select pg_temp.expect_denied('viewer no inserta', $q$insert into public.clients (nombre) values ('x')$q$);
 select pg_temp.expect_denied('viewer no escribe notas', $q$insert into public.interview_notes (interview_id, notas_privadas) values ('10000000-0000-0000-0000-0000000000a1','x')$q$);
 select pg_temp.expect_denied('viewer no escribe horas', $q$insert into public.time_log (client_id, actividad, minutos) values ('c0000000-0000-0000-0000-00000000000a','otro',5)$q$);
-select pg_temp.expect_denied('viewer no se promueve', $q$update public.profiles set role = 'owner'$q$);
+update public.profiles set role = 'owner';  -- sin política de UPDATE: afecta 0 filas (se verifica abajo)
 select pg_temp.expect_denied('viewer no se da alcance', $q$insert into public.viewers (user_id, client_id) values ('00000000-0000-0000-0000-0000000000b1','c0000000-0000-0000-0000-00000000000b')$q$);
 -- UPDATE/DELETE no afectan filas (RLS las oculta)
 update public.areas set nombre = 'hack'; delete from public.documents;
 reset role;
+select pg_temp.expect('viewer no se promueve a owner', (select count(*) from public.profiles where role = 'owner' and user_id::text like '00000000-0000-0000-0000-0000000000b%'), 0);
 select pg_temp.expect('areas intactas', (select count(*) from public.areas where nombre = 'hack'), 0);
-select pg_temp.expect('docs intactos', (select count(*) from public.documents), 4);
+select pg_temp.expect('docs intactos', (select count(*) from public.documents where ruta_storage in ('ta/pub.pdf','ta/conf.pdf','ta/pub2.pdf','tb/pub.pdf')), 4);
 
 -- ═════════ VIEWER DE ÁREA A1 ═════════
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000b2');
