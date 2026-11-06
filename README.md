@@ -30,3 +30,9 @@ Importa el repo de GitHub, define las dos variables `NEXT_PUBLIC_*` y despliega.
 
 ## Para después (no está en el MVP)
 Varios encargados por área · historial de puntuaciones · PDF nativo · notificaciones · carga masiva · gráficos avanzados · cobros/planes/chat/IA (fuera de alcance).
+
+## Notas de seguridad y operación
+- El viewer **no** ve: notas de entrevistas, horas, personas, entrevistas, `responsable`/`evidencia` de procesos, `fuente` de mediciones, `notas` de la hoja de ruta, RUT/notas del cliente ni documentos confidenciales. Aun así, **no escribas nombres de personas** en campos que sí ve (problemas, pasos, títulos de la hoja de ruta, nombre de documentos).
+- Subida de documentos: máx. 4 MB (límite del cuerpo en Vercel).
+- Datos de ejemplo: `supabase/seed.sql` crea el cliente ficticio «Ejemplo». Elimínalo con `delete from clients where nombre = 'Ejemplo';` antes de usar datos reales.
+- Las migraciones se aplicaron con `apply_migration`/SQL editor; el historial remoto puede tener otros timestamps que los archivos locales. Los archivos de `supabase/migrations/` son la fuente de verdad.
