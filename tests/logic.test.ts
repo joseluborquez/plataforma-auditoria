@@ -1,0 +1,71 @@
+import { describe, expect, it } from "vitest";
+import { compare, latest, weeklyMinutes } from "@/lib/measurements";
+import { impactOf, quadrantOf, suggestDecision } from "@/lib/scoring";
+import { bucketOf, summarize } from "@/lib/hours";
+
+describe("scoring", () => {
+  it("impacto = suma de seis criterios", () => {
+    expect(impactOf({ frecuencia_volumen: 1, tiempo: 1, repetitivo_reglas: 1, entradas_digitales: 1, errores_retrabajo: 1, quien_lo_asume: 1 })).toBe(6);
+    expect(impactOf({ frecuencia_volumen: 5, tiempo: 5, repetitivo_reglas: 5, entradas_digitales: 5, errores_retrabajo: 5, quien_lo_asume: 5 })).toBe(30);
+    expect(impactOf({ frecuencia_volumen: 4, tiempo: 5, repetitivo_reglas: 5, entradas_digitales: 3, errores_retrabajo: 4, quien_lo_asume: 4 })).toBe(25);
+  });
+  it("cuadrantes", () => {
+    expect(quadrantOf(25, 2)).toBe("quick_win");
+    expect(quadrantOf(25, 4)).toBe("estrategico");
+    expect(quadrantOf(10, 1)).toBe("relleno");
+    expect(quadrantOf(10, 5)).toBe("evitar");
+  });
+  it("sugerencia de decisión", () => {
+    expect(suggestDecision(25, 2, false)).toBe("automatizar");
+    expect(suggestDecision(25, 2, true)).toBe("integrar_ia");
+    expect(suggestDecision(8, 1, false)).toBe("no_tocar");
+    expect(suggestDecision(20, 5, false)).toBe("integrar_ia");
+  });
+});
+
+describe("mediciones", () => {
+  const base = { tipo: "linea_base" as const, minutos_por_vez: 240, veces_por_semana: 1, personas: 2, fecha: "2026-01-01" };
+  const post = { tipo: "posterior" as const, minutos_por_vez: 60, veces_por_semana: 1, personas: 1, fecha: "2026-02-01" };
+  it("minutos semanales", () => expect(weeklyMinutes(base)).toBe(480));
+  it("compara base vs posterior", () => {
+    const c = compare([base, post])!;
+    expect(c.baseWeekly).toBe(480);
+    expect(c.postWeekly).toBe(60);
+    expect(c.diffMinutes).toBe(420);
+    expect(c.diffPct).toBeCloseTo(87.5);
+    expect(c.annualHoursSaved).toBeCloseTo(364);
+  });
+  it("sin posterior no hay comparación", () => expect(compare([base])).toBeNull());
+  it("usa la medición más reciente", () => {
+    const old = { ...base, fecha: "2025-12-01", minutos_por_vez: 999 };
+    expect(latest([old, base], "linea_base")!.minutos_por_vez).toBe(240);
+  });
+  it("base 0 no divide por cero", () => {
+    expect(compare([{ ...base, minutos_por_vez: 0 }, post])!.diffPct).toBeNull();
+  });
+});
+
+describe("horas", () => {
+  it("clasifica actividades", () => {
+    expect(bucketOf("preparacion")).toBe("fija");
+    expect(bucketOf("entrevista")).toBe("por_entrevista");
+    expect(bucketOf("otro")).toBe("variable");
+  });
+  it("resume por actividad y cliente", () => {
+    const r = summarize(
+      [
+        { client_id: "a", actividad: "preparacion", minutos: 60 },
+        { client_id: "a", actividad: "entrevista", minutos: 120 },
+        { client_id: "a", actividad: "traslado", minutos: 60 },
+        { client_id: "a", actividad: "otro", minutos: 30 },
+        { client_id: "b", actividad: "analisis", minutos: 90 },
+      ],
+      { a: 2 },
+    );
+    expect(r.total).toBe(360);
+    expect(r.byActivity.entrevista).toBe(120);
+    const a = r.byClient.find((c) => c.clientId === "a")!;
+    expect(a).toMatchObject({ total: 270, fijas: 60, porEntrevista: 180, variables: 30, minPorEntrevista: 90 });
+    expect(r.byClient.find((c) => c.clientId === "b")!.minPorEntrevista).toBeNull();
+  });
+});

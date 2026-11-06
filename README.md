@@ -23,7 +23,7 @@ Las migraciones están en `supabase/migrations/` (fuente de verdad). Con la CLI:
 - `supabase/tests/rls.test.sql`: pruebas de políticas RLS. Cada bloque corre en una transacción que termina en `ROLLBACK`; si una aserción falla, lanza error. Se ejecuta con `psql -f` o desde el SQL editor.
 
 ### Usuarios
-`npx tsx scripts/create-user.ts <email> <owner|viewer> [clientId] [areaId]` (requiere `SUPABASE_SERVICE_ROLE_KEY` en `.env.local`).
+`USER_PASSWORD=... npx tsx --env-file=.env.local scripts/create-user.ts <email> <owner|viewer> [clientId] [areaId]` (requiere `SUPABASE_SERVICE_ROLE_KEY` en `.env.local`).
 
 ### Despliegue (Vercel)
 Importa el repo de GitHub, define las dos variables `NEXT_PUBLIC_*` y despliega. En Supabase → Auth → URL Configuration agrega la URL de Vercel.
