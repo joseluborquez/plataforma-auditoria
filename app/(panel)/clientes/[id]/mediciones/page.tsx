@@ -1,8 +1,8 @@
 import { requireOwner } from "@/lib/auth";
 import { rows } from "@/lib/db";
 import { formatDateOnly, formatMinutes, todayISO } from "@/lib/format";
-import { MEAS_KIND } from "@/lib/labels";
-import { compare, weeklyMinutes } from "@/lib/measurements";
+import { MEAS_KIND, MEAS_METHOD } from "@/lib/labels";
+import { compare, weeklyMinutes, weeklyRange } from "@/lib/measurements";
 import type { Measurement, Process } from "@/lib/types";
 import { Empty, Field, Panel, SelectField, opts } from "@/components/form";
 import { SubmitButton } from "@/components/submit-button";
@@ -29,6 +29,9 @@ export default async function MedicionesPage({ params }: PageProps<"/clientes/[i
           <Field label="Minutos por vez" name="minutos_por_vez" type="number" min={0} step="any" required />
           <Field label="Veces por semana" name="veces_por_semana" type="number" min={0} step="any" required />
           <Field label="Personas" name="personas" type="number" min={1} defaultValue={1} required />
+          <SelectField label="Cómo se obtuvo" name="metodo" required options={opts(MEAS_METHOD)} defaultValue="declarado" />
+          <Field label="Mínimo observado (min por vez)" name="minutos_min" type="number" min={0} step="any" placeholder="opcional" />
+          <Field label="Máximo observado (min por vez)" name="minutos_max" type="number" min={0} step="any" placeholder="opcional" />
           <Field label="Fuente (sin nombres)" name="fuente" placeholder="Cronometraje, registro…" />
           <div className="sm:col-span-4"><SubmitButton>Registrar medición</SubmitButton></div>
         </form>
@@ -51,6 +54,7 @@ export default async function MedicionesPage({ params }: PageProps<"/clientes/[i
                   <div key={k} className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">{k}</p><p className="font-mono text-lg">{v}</p></div>
                 ))}
                 <p className="text-xs text-muted-foreground sm:col-span-4">
+                  {c.declared && <b>Estimación basada en tiempos declarados en entrevista; conviene cronometrar para confirmarla. </b>}
                   Ahorro estimado: {c.annualHoursSaved.toLocaleString("es-CL", { maximumFractionDigits: 0 })} horas al año (52 semanas). Se usa la medición más reciente de cada tipo.
                 </p>
               </div>
@@ -60,7 +64,9 @@ export default async function MedicionesPage({ params }: PageProps<"/clientes/[i
                 <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <span className="flex items-center gap-2">
                     <Badge variant={m.tipo === "linea_base" ? "secondary" : "default"}>{MEAS_KIND[m.tipo]}</Badge>
-                    <span className="font-mono">{m.minutos_por_vez} min × {m.veces_por_semana}/sem × {m.personas} pers. = {formatMinutes(weeklyMinutes(m))}/sem</span>
+                    <Badge variant="outline">{MEAS_METHOD[m.metodo]}</Badge>
+                    <span className="font-mono">{m.minutos_por_vez} min × {m.veces_por_semana}/sem × {m.personas} pers. = {formatMinutes(weeklyMinutes(m))}/sem
+                      {(() => { const r = weeklyRange(m); return r ? ` (rango ${formatMinutes(r[0])}–${formatMinutes(r[1])})` : ""; })()}</span>
                   </span>
                   <span className="flex items-center gap-3 text-xs text-muted-foreground">
                     {formatDateOnly(m.fecha)}{m.fuente ? ` · ${m.fuente}` : ""}

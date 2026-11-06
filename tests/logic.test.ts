@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { compare, latest, weeklyMinutes } from "@/lib/measurements";
+import { compare, latest, weeklyMinutes, weeklyRange } from "@/lib/measurements";
+import { suggestStage } from "@/lib/stage";
+import { RUBRIC } from "@/lib/rubric";
+import { CRITERIA_KEYS } from "@/lib/scoring";
 import { impactOf, quadrantOf, suggestDecision } from "@/lib/scoring";
 import { bucketOf, summarize } from "@/lib/hours";
 
@@ -81,5 +84,35 @@ describe("cobertura de entrevistas", () => {
     ]);
     expect(cov[0]).toMatchObject({ encargado: "realizada", trabajador: "agendada" });
     expect(cov[1]).toMatchObject({ encargado: null, trabajador: null });
+  });
+});
+
+describe("método y rango de mediciones", () => {
+  const base = { tipo: "linea_base" as const, minutos_por_vez: 60, veces_por_semana: 2, personas: 2, fecha: "2026-01-01" };
+  const post = { tipo: "posterior" as const, minutos_por_vez: 10, veces_por_semana: 2, personas: 1, fecha: "2026-02-01" };
+  it("rango semanal", () => {
+    expect(weeklyRange({ ...base, minutos_min: 30, minutos_max: 90 })).toEqual([120, 360]);
+    expect(weeklyRange(base)).toBeNull();
+  });
+  it("marca como declarada si alguna medición lo es", () => {
+    expect(compare([base, post])!.declared).toBe(true); // sin metodo = declarado
+    expect(compare([{ ...base, metodo: "cronometrado" as const }, { ...post, metodo: "registro_sistema" as const }])!.declared).toBe(false);
+    expect(compare([{ ...base, metodo: "cronometrado" as const }, { ...post, metodo: "declarado" as const }])!.declared).toBe(true);
+  });
+});
+
+describe("etapa del proceso", () => {
+  it("sugiere según lo cargado", () => {
+    expect(suggestStage({ pasos: [], problemas: null }, false, false)).toBe("identificado");
+    expect(suggestStage({ pasos: ["a"], problemas: null }, false, false)).toBe("documentado");
+    expect(suggestStage({ pasos: [], problemas: "x" }, true, false)).toBe("medido");
+    expect(suggestStage({ pasos: [], problemas: null }, true, true)).toBe("puntuado");
+  });
+});
+
+describe("rúbrica", () => {
+  it("cubre los seis criterios de la puntuación", () => {
+    expect(RUBRIC.map((r) => r.key).sort()).toEqual([...CRITERIA_KEYS].sort());
+    for (const r of RUBRIC) expect([r.uno, r.tres, r.cinco].every((t) => t.length > 10)).toBe(true);
   });
 });

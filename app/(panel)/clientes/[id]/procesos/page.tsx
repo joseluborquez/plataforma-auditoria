@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { requireOwner } from "@/lib/auth";
 import { rows } from "@/lib/db";
-import { DECISION } from "@/lib/labels";
+import { DECISION, PROCESS_STAGE } from "@/lib/labels";
 import type { Area, Process, Score } from "@/lib/types";
-import { Empty, Field, Panel, SelectField } from "@/components/form";
+import { Empty, Field, Panel, SelectField, TextAreaField } from "@/components/form";
 import { SubmitButton } from "@/components/submit-button";
 import { Badge } from "@/components/ui/badge";
-import { createProcessAction } from "./actions";
+import { createProcessAction, inventoryAction } from "./actions";
 
 export default async function ProcesosPage({ params }: PageProps<"/clientes/[id]/procesos">) {
   const { id } = await params;
@@ -35,7 +35,8 @@ export default async function ProcesosPage({ params }: PageProps<"/clientes/[id]
                   return (
                     <li key={p.id}>
                       <Link href={`/clientes/${id}/procesos/${p.id}`} className="flex items-center justify-between gap-3 py-2 hover:text-primary">
-                        <span className="text-sm font-medium">{p.nombre}</span>
+                        <span className="flex items-center gap-2 text-sm font-medium">{p.nombre}
+                          <Badge variant={p.estado_proceso === "validado" ? "default" : "outline"}>{PROCESS_STAGE[p.estado_proceso]}</Badge></span>
                         <span className="flex items-center gap-2 text-xs">
                           {s ? (<><span className="font-mono text-muted-foreground">Impacto {s.impacto} · Esf. {s.esfuerzo}</span>
                             {s.decision && <Badge variant="secondary">{DECISION[s.decision]}</Badge>}</>)
@@ -50,6 +51,16 @@ export default async function ProcesosPage({ params }: PageProps<"/clientes/[id]
           );
         })}
       </div>
+      <div className="space-y-4">
+        <Panel title="Inventario rápido (una tarea por línea)">
+          {areas.length === 0 ? <Empty>Crea áreas primero (pestaña Resumen).</Empty> : (
+            <form action={inventoryAction.bind(null, id)} className="space-y-3">
+              <SelectField label="Área" name="area_id" required options={areas.map((a) => ({ value: a.id, label: a.nombre }))} />
+              <TextAreaField label="Tareas recurrentes que mencionó la persona" name="tareas" rows={6} placeholder={"Liquidación de sueldos\nControl de asistencia\nContratos nuevos"} />
+              <SubmitButton>Crear como «Identificado»</SubmitButton>
+            </form>
+          )}
+        </Panel>
       <Panel title="Nuevo proceso">
         {areas.length === 0 ? <Empty>Crea áreas primero (pestaña Resumen).</Empty> : (
           <form action={createProcessAction.bind(null, id)} className="space-y-3">
@@ -59,6 +70,7 @@ export default async function ProcesosPage({ params }: PageProps<"/clientes/[id]
           </form>
         )}
       </Panel>
+      </div>
     </div>
   );
 }

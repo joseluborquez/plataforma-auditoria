@@ -4,14 +4,14 @@ import { rows } from "@/lib/db";
 import { coverageByArea } from "@/lib/coverage";
 import { formatDateTime, isoToSantiagoLocal, todayISO } from "@/lib/format";
 import { INTERVIEW_STATUS, INTERVIEW_TYPE } from "@/lib/labels";
-import type { Area, Interview, Person } from "@/lib/types";
+import type { Area, Interview, Person, Process } from "@/lib/types";
 import { Empty, Field, Panel, SelectField, TextAreaField, opts } from "@/components/form";
 import { SubmitButton } from "@/components/submit-button";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { InterviewCalendar } from "@/components/interview-calendar";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { createInterviewAction, deleteInterviewAction, updateInterviewAction } from "./actions";
+import { createInterviewAction, deleteInterviewAction, linkProcessAction, unlinkProcessAction, updateInterviewAction } from "./actions";
 
 function StatusBadge({ s }: { s: Interview["estado"] | null }) {
   if (!s) return <Badge variant="destructive">Falta</Badge>;
@@ -25,16 +25,23 @@ export default async function EntrevistasPage({ params, searchParams }: PageProp
   const month = typeof sp.mes === "string" && /^\d{4}-\d{2}$/.test(sp.mes) ? sp.mes : todayISO().slice(0, 7);
   const { supabase } = await requireOwner();
 
-  const [areas, people, interviews] = await Promise.all([
+  const [areas, people, interviews, processes] = await Promise.all([
     supabase.from("areas").select("*").eq("client_id", id).order("nombre").then(rows<Area>),
     supabase.from("people").select("*").eq("client_id", id).order("nombre").then(rows<Person>),
     supabase.from("interviews").select("*").eq("client_id", id).order("fecha_hora", { ascending: false, nullsFirst: false }).then(rows<Interview>),
+    supabase.from("processes").select("*").eq("client_id", id).order("nombre").then(rows<Process>),
   ]);
   const notes = rows<{ interview_id: string; notas_privadas: string }>(
     interviews.length
       ? await supabase.from("interview_notes").select("*").in("interview_id", interviews.map((i) => i.id))
       : { data: [], error: null },
   );
+  const links = rows<{ interview_id: string; process_id: string }>(
+    interviews.length
+      ? await supabase.from("interview_processes").select("*").in("interview_id", interviews.map((i) => i.id))
+      : { data: [], error: null },
+  );
+  const procName = Object.fromEntries(processes.map((p) => [p.id, p.nombre]));
   const noteOf = new Map(notes.map((n) => [n.interview_id, n.notas_privadas]));
   const names = Object.fromEntries(people.map((p) => [p.id, p.nombre]));
   const areaName = Object.fromEntries(areas.map((a) => [a.id, a.nombre]));
@@ -109,6 +116,24 @@ export default async function EntrevistasPage({ params, searchParams }: PageProp
                   <SubmitButton>Guardar</SubmitButton>
                 </div>
               </form>
+              <div className="space-y-2 border-t p-3">
+                <p className="text-xs font-medium text-muted-foreground">Procesos que salieron de esta entrevista</p>
+                <ul className="flex flex-wrap gap-2 text-sm">
+                  {links.filter((l) => l.interview_id === i.id).map((l) => (
+                    <li key={l.process_id} className="flex items-center gap-1 rounded-md border px-2 py-0.5">
+                      <Link href={`/clientes/${id}/procesos/${l.process_id}`} className="hover:text-primary">{procName[l.process_id]}</Link>
+                      <form action={unlinkProcessAction.bind(null, id, i.id, l.process_id)}><button type="submit" className="text-xs text-muted-foreground hover:text-destructive" title="Quitar vínculo">✕</button></form>
+                    </li>
+                  ))}
+                </ul>
+                {processes.some((p) => !links.some((l) => l.interview_id === i.id && l.process_id === p.id)) && (
+                  <form action={linkProcessAction.bind(null, id, i.id)} className="flex items-end gap-2">
+                    <SelectField label="Vincular proceso" name="process_id" required className="flex-1"
+                      options={processes.filter((p) => !links.some((l) => l.interview_id === i.id && l.process_id === p.id)).map((p) => ({ value: p.id, label: p.nombre }))} />
+                    <SubmitButton size="sm" variant="secondary">Vincular</SubmitButton>
+                  </form>
+                )}
+              </div>
               <div className="border-t p-3">
                 <ConfirmDelete action={deleteInterviewAction.bind(null, id, i.id)} what="la entrevista" />
               </div>

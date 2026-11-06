@@ -51,11 +51,14 @@ begin
      'Aprobaciones en papel', 'en_papel',
      '{"proveedores":[],"entradas":[],"proceso":[],"salidas":[],"clientes":[]}'::jsonb, null);
 
-  insert into public.time_measurements (process_id, tipo, minutos_por_vez, veces_por_semana, personas, fecha, fuente) values
-    (pr1, 'linea_base', 240, 1, 2, current_date - 20, 'Fuente privada ficticia'),
-    (pr1, 'posterior', 60, 1, 1, current_date - 2, 'Prueba piloto'),
-    (pr2, 'linea_base', 90, 1, 1, current_date - 18, 'Cronometraje'),
-    (pr3, 'linea_base', 45, 6, 1, current_date - 15, 'Cronometraje');
+  insert into public.interview_processes (interview_id, process_id) values (i1, pr1);
+  update public.processes set estado_proceso = 'puntuado' where id in (pr1, pr2, pr3);
+
+  insert into public.time_measurements (process_id, tipo, minutos_por_vez, veces_por_semana, personas, fecha, fuente, metodo, minutos_min, minutos_max) values
+    (pr1, 'linea_base', 240, 1, 2, current_date - 20, 'Fuente privada ficticia', 'declarado', 180, 300),
+    (pr1, 'posterior', 60, 1, 1, current_date - 2, 'Prueba piloto', 'cronometrado', 50, 75),
+    (pr2, 'linea_base', 90, 1, 1, current_date - 18, 'Cronometraje', 'cronometrado', null, null),
+    (pr3, 'linea_base', 45, 6, 1, current_date - 15, 'Registro', 'declarado', 30, 60);
 
   insert into public.scores (process_id, frecuencia_volumen, tiempo, repetitivo_reglas, entradas_digitales, errores_retrabajo, quien_lo_asume, riesgo_legal, esfuerzo, decision) values
     (pr1, 4, 5, 5, 3, 4, 4, true, 3, 'automatizar'),

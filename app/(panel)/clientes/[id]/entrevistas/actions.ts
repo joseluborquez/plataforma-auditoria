@@ -50,3 +50,16 @@ export async function deleteInterviewAction(clientId: string, interviewId: strin
   check(await supabase.from("interviews").delete().eq("id", interviewId));
   revalidatePath(`/clientes/${clientId}/entrevistas`);
 }
+
+export async function linkProcessAction(clientId: string, interviewId: string, fd: FormData) {
+  const { supabase } = await requireOwner();
+  const process_id = z.string().uuid("Elige un proceso").parse(fd.get("process_id"));
+  check(await supabase.from("interview_processes").upsert({ interview_id: interviewId, process_id }));
+  revalidatePath(`/clientes/${clientId}`, "layout");
+}
+
+export async function unlinkProcessAction(clientId: string, interviewId: string, processId: string) {
+  const { supabase } = await requireOwner();
+  check(await supabase.from("interview_processes").delete().eq("interview_id", interviewId).eq("process_id", processId));
+  revalidatePath(`/clientes/${clientId}`, "layout");
+}

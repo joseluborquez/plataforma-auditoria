@@ -25,14 +25,31 @@ export async function createProcessAction(clientId: string, fd: FormData) {
   redirect(`/clientes/${clientId}/procesos/${res.data!.id}`);
 }
 
+export async function inventoryAction(clientId: string, fd: FormData) {
+  const { supabase } = await requireOwner();
+  const area_id = z.string().uuid("Elige un área").parse(fd.get("area_id"));
+  const nombres = lines(fd.get("tareas")).slice(0, 50);
+  if (nombres.length === 0) throw new Error("Escribe al menos una tarea (una por línea).");
+  check(await supabase.from("processes").insert(nombres.map((nombre) => ({ client_id: clientId, area_id, nombre }))));
+  revalidatePath(`/clientes/${clientId}/procesos`);
+}
+
+export async function linkInterviewAction(clientId: string, processId: string, fd: FormData) {
+  const { supabase } = await requireOwner();
+  const interview_id = z.string().uuid().parse(fd.get("interview_id"));
+  check(await supabase.from("interview_processes").upsert({ interview_id, process_id: processId }));
+  revalidatePath(`/clientes/${clientId}`, "layout");
+}
+
 export async function updateProcessAction(clientId: string, pid: string, fd: FormData) {
   const { supabase } = await requireOwner();
   const nombre = z.string().trim().min(1, "El nombre es obligatorio").parse(fd.get("nombre"));
   const area_id = z.string().uuid().parse(fd.get("area_id"));
   const estado = opt(fd.get("estado_datos"));
   const estado_datos = estado ? z.enum(["estructurados", "dispersos", "en_papel", "inexistentes"]).parse(estado) : null;
+  const estado_proceso = z.enum(["identificado", "documentado", "medido", "puntuado", "validado"]).parse(fd.get("estado_proceso") ?? "identificado");
   check(await supabase.from("processes").update({
-    nombre, area_id, responsable: opt(fd.get("responsable")), disparador: opt(fd.get("disparador")),
+    nombre, area_id, estado_proceso, responsable: opt(fd.get("responsable")), disparador: opt(fd.get("disparador")),
     pasos: lines(fd.get("pasos")), herramientas: commas(fd.get("herramientas")),
     problemas: opt(fd.get("problemas")), estado_datos, evidencia: opt(fd.get("evidencia")),
     sipoc: {
@@ -60,6 +77,9 @@ export async function saveScoreAction(clientId: string, pid: string, fd: FormDat
     esfuerzo: score.parse(fd.get("esfuerzo")),
     decision: dec ? z.enum(["automatizar", "integrar_ia", "no_tocar"]).parse(dec) : null,
   }));
+  // Avanza la etapa a «Puntuado» sin retroceder un proceso ya puntuado o validado.
+  check(await supabase.from("processes").update({ estado_proceso: "puntuado" })
+    .eq("id", pid).in("estado_proceso", ["identificado", "documentado", "medido"]));
   revalidatePath(`/clientes/${clientId}`, "layout");
 }
 

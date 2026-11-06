@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const TABS = [
-  ["", "Resumen"], ["/entrevistas", "Entrevistas"], ["/procesos", "Procesos"], ["/mediciones", "Mediciones"],
+  ["", "Resumen"], ["/guion", "Guion"], ["/entrevistas", "Entrevistas"], ["/procesos", "Procesos"], ["/mediciones", "Mediciones"],
   ["/priorizacion", "Priorización"], ["/hoja-de-ruta", "Hoja de ruta"], ["/documentos", "Documentos"], ["/horas", "Horas"],
 ] as const;
 

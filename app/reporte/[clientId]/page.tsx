@@ -118,6 +118,7 @@ export default async function ReportePage({ params }: PageProps<"/reporte/[clien
                         {formatMinutes(c.baseWeekly)}/semana antes → {formatMinutes(c.postWeekly)}/semana después
                         ({c.diffMinutes >= 0 ? "ahorro de " : "aumento de "}{formatMinutes(Math.abs(c.diffMinutes))}
                         {c.diffPct !== null && `, ${Math.abs(c.diffPct).toFixed(1).replace(".", ",")}%`}).
+                        {c.declared && <span className="text-muted-foreground"> Estimación basada en tiempos declarados por el equipo.</span>}
                       </p>
                     )}
                   </article>

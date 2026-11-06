@@ -4,6 +4,8 @@ export type InterviewType = "encargado" | "trabajador";
 export type InterviewStatus = "pendiente" | "agendada" | "realizada";
 export type DataState = "estructurados" | "dispersos" | "en_papel" | "inexistentes";
 export type MeasKind = "linea_base" | "posterior";
+export type MeasMethod = "declarado" | "cronometrado" | "registro_sistema";
+export type ProcessStage = "identificado" | "documentado" | "medido" | "puntuado" | "validado";
 export type Decision = "automatizar" | "integrar_ia" | "no_tocar";
 export type Phase = "quick_win" | "mediano_plazo" | "largo_plazo";
 export type Priority = "alta" | "media" | "baja";
@@ -33,13 +35,14 @@ export type Sipoc = {
 export type Process = {
   id: string; client_id: string; area_id: string; nombre: string; responsable: string | null;
   disparador: string | null; pasos: string[]; herramientas: string[]; problemas: string | null;
-  estado_datos: DataState | null; sipoc: Sipoc; evidencia: string | null;
+  estado_datos: DataState | null; sipoc: Sipoc; evidencia: string | null; estado_proceso: ProcessStage;
 };
 /** Lo que ve el viewer: sin responsable ni evidencia. */
-export type ReportProcess = Omit<Process, "responsable" | "evidencia">;
+export type ReportProcess = Omit<Process, "responsable" | "evidencia" | "estado_proceso">;
 export type Measurement = {
   id: string; process_id: string; tipo: MeasKind; minutos_por_vez: number;
   veces_por_semana: number; personas: number; fecha: string; fuente?: string | null;
+  metodo: MeasMethod; minutos_min: number | null; minutos_max: number | null;
 };
 export type Score = {
   process_id: string; frecuencia_volumen: number; tiempo: number; repetitivo_reglas: number;

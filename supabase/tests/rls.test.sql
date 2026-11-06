@@ -30,6 +30,8 @@ insert into public.processes (id, client_id, area_id, nombre, responsable, evide
   ('20000000-0000-0000-0000-0000000000a1', 'c0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-0000000000a1', 'Proceso A1', 'Resp A1', 'Evid A1'),
   ('20000000-0000-0000-0000-0000000000a2', 'c0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-0000000000a2', 'Proceso A2', 'Resp A2', 'Evid A2'),
   ('20000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-00000000000b', 'a0000000-0000-0000-0000-0000000000b1', 'Proceso B1', 'Resp B1', 'Evid B1');
+insert into public.interview_processes (interview_id, process_id) values
+  ('10000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1');
 insert into public.time_measurements (process_id, tipo, minutos_por_vez, veces_por_semana, fecha, fuente) values
   ('20000000-0000-0000-0000-0000000000a1', 'linea_base', 60, 1, current_date, 'fuente a1'),
   ('20000000-0000-0000-0000-0000000000a2', 'linea_base', 30, 1, current_date, 'fuente a2'),
@@ -96,6 +98,9 @@ select pg_temp.expect('viewer: 0 processes (tabla base)', (select count(*) from 
 select pg_temp.expect('viewer: 0 clients (tabla base)', (select count(*) from public.clients), 0);
 select pg_temp.expect('viewer: 0 time_measurements (tabla base)', (select count(*) from public.time_measurements), 0);
 select pg_temp.expect('viewer: 0 roadmap_items (tabla base)', (select count(*) from public.roadmap_items), 0);
+select pg_temp.expect('viewer: 0 interview_processes (no sabe qué entrevista originó qué)', (select count(*) from public.interview_processes), 0);
+select pg_temp.expect('viewer ve método de medición', (select count(*) from public.report_measurements where metodo = 'declarado'), 2);
+select pg_temp.expect_denied('viewer no vincula entrevistas', $q$insert into public.interview_processes (interview_id, process_id) values ('10000000-0000-0000-0000-0000000000a1','20000000-0000-0000-0000-0000000000a2')$q$);
 select pg_temp.expect('viewer: 0 profiles ajenos', (select count(*) from public.profiles where role = 'owner'), 0);
 select pg_temp.expect('viewer ve su cliente', (select count(*) from public.report_clients), 1);
 select pg_temp.expect('viewer no ve cliente B', (select count(*) from public.report_clients where nombre = 'Cliente B'), 0);
@@ -156,6 +161,7 @@ set local role anon;
 select pg_temp.expect_denied('anon no lee clients', 'select * from public.clients');
 select pg_temp.expect_denied('anon no lee vista', 'select * from public.report_processes');
 select pg_temp.expect_denied('anon no lee notas', 'select * from public.interview_notes');
+select pg_temp.expect_denied('anon no lee vínculos', 'select * from public.interview_processes');
 reset role;
 
 -- ═════════ RLS activa en todas las tablas de public ═════════

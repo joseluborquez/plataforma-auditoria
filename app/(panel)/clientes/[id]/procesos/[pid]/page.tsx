@@ -2,14 +2,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireOwner } from "@/lib/auth";
 import { one, rows } from "@/lib/db";
-import { CRITERIA, DATA_STATE, DECISION } from "@/lib/labels";
+import { CRITERIA, DATA_STATE, DECISION, INTERVIEW_TYPE, PROCESS_STAGE } from "@/lib/labels";
+import { EFFORT_RUBRIC, RUBRIC } from "@/lib/rubric";
+import { suggestStage } from "@/lib/stage";
+import { formatDateTime } from "@/lib/format";
 import { quadrantOf, QUADRANT_LABEL, suggestDecision, IMPACT_MAX } from "@/lib/scoring";
-import type { Area, Process, Score } from "@/lib/types";
+import type { Area, Interview, Person, Process, Score } from "@/lib/types";
 import { Field, Panel, SelectField, TextAreaField, opts } from "@/components/form";
 import { SubmitButton } from "@/components/submit-button";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { Badge } from "@/components/ui/badge";
-import { deleteProcessAction, saveScoreAction, updateProcessAction } from "../actions";
+import { deleteProcessAction, linkInterviewAction, saveScoreAction, updateProcessAction } from "../actions";
 
 const SIPOC = [
   ["proveedores", "S · Proveedores"], ["entradas", "I · Entradas"], ["proceso", "P · Proceso"],
@@ -20,13 +23,20 @@ const ONE_TO_FIVE = [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: Strin
 export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/procesos/[pid]">) {
   const { id, pid } = await params;
   const { supabase } = await requireOwner();
-  const [p, areas, score] = await Promise.all([
+  const [p, areas, score, interviews, people, links, meas] = await Promise.all([
     supabase.from("processes").select("*").eq("id", pid).eq("client_id", id).maybeSingle().then(one<Process>),
     supabase.from("areas").select("*").eq("client_id", id).order("nombre").then(rows<Area>),
     supabase.from("scores").select("*").eq("process_id", pid).maybeSingle().then(one<Score>),
+    supabase.from("interviews").select("*").eq("client_id", id).order("fecha_hora", { ascending: false, nullsFirst: false }).then(rows<Interview>),
+    supabase.from("people").select("*").eq("client_id", id).then(rows<Person>),
+    supabase.from("interview_processes").select("interview_id").eq("process_id", pid).then(rows<{ interview_id: string }>),
+    supabase.from("time_measurements").select("id", { count: "exact", head: true }).eq("process_id", pid),
   ]);
   if (!p) notFound();
   const sip = p.sipoc ?? { proveedores: [], entradas: [], proceso: [], salidas: [], clientes: [] };
+  const personName = Object.fromEntries(people.map((x) => [x.id, x.nombre]));
+  const linked = new Set(links.map((l) => l.interview_id));
+  const stageHint = suggestStage(p, (meas.count ?? 0) > 0, !!score);
   const suggestion = score ? suggestDecision(score.impacto, score.esfuerzo, score.riesgo_legal) : null;
 
   return (
@@ -43,6 +53,8 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
             <TextAreaField label="Problemas detectados" name="problemas" rows={6} defaultValue={p.problemas} />
             <Field label="Herramientas (separadas por coma)" name="herramientas" defaultValue={(p.herramientas ?? []).join(", ")} />
             <SelectField label="Estado de los datos" name="estado_datos" emptyLabel="Sin definir" options={opts(DATA_STATE)} defaultValue={p.estado_datos} />
+            <SelectField label="Etapa del proceso" name="estado_proceso" required options={opts(PROCESS_STAGE)} defaultValue={p.estado_proceso} />
+            <p className="self-end pb-2 text-xs text-muted-foreground">Sugerida según lo cargado: <b>{PROCESS_STAGE[stageHint]}</b>. «Validado» solo cuando el encargado lo confirme.</p>
             <TextAreaField className="sm:col-span-2" label="Evidencia (privada)" name="evidencia" rows={3} defaultValue={p.evidencia} />
           </div>
         </Panel>
@@ -56,7 +68,36 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
         <SubmitButton>Guardar ficha</SubmitButton>
       </form>
 
+      <Panel title="Entrevistas donde surgió este proceso (solo tú lo ves)">
+        <ul className="mb-3 space-y-1 text-sm">
+          {interviews.filter((i) => linked.has(i.id)).map((i) => (
+            <li key={i.id}>{formatDateTime(i.fecha_hora)} · {INTERVIEW_TYPE[i.tipo]} · {personName[i.person_id ?? ""] ?? "Sin persona"}</li>
+          ))}
+          {linked.size === 0 && <li className="text-muted-foreground">Aún sin vincular.</li>}
+        </ul>
+        {interviews.some((i) => !linked.has(i.id)) && (
+          <form action={linkInterviewAction.bind(null, id, pid)} className="flex items-end gap-2">
+            <SelectField label="Vincular entrevista" name="interview_id" required className="flex-1"
+              options={interviews.filter((i) => !linked.has(i.id)).map((i) => ({ value: i.id, label: `${formatDateTime(i.fecha_hora)} · ${INTERVIEW_TYPE[i.tipo]} · ${personName[i.person_id ?? ""] ?? "Sin persona"}` }))} />
+            <SubmitButton size="sm" variant="secondary">Vincular</SubmitButton>
+          </form>
+        )}
+      </Panel>
+
       <Panel title="Puntuación de automatizabilidad">
+        <details className="mb-4 rounded-lg border p-3 text-sm">
+          <summary className="cursor-pointer font-medium">Ver rúbrica de puntuación (5 = muy favorable a automatizar)</summary>
+          <div className="mt-3 space-y-3">
+            {[...RUBRIC, { key: "esfuerzo", pregunta: "5 = más difícil de implementar.", ...EFFORT_RUBRIC }].map((r) => (
+              <div key={r.key}>
+                <p className="font-medium">{r.label} <span className="font-normal text-muted-foreground">— {r.pregunta}</span></p>
+                <ul className="ml-4 list-disc text-xs text-muted-foreground">
+                  <li><b>1:</b> {r.uno}</li><li><b>3:</b> {r.tres}</li><li><b>5:</b> {r.cinco}</li>
+                </ul>
+              </div>
+            ))}
+          </div>
+        </details>
         {score && (
           <p className="mb-4 flex flex-wrap items-center gap-2 text-sm">
             <span className="font-mono text-lg">Impacto {score.impacto}/{IMPACT_MAX}</span>
