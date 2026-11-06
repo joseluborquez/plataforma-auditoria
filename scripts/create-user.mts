@@ -1,7 +1,7 @@
 /**
  * Crea un usuario (dueño o viewer). Solo para uso local: requiere SUPABASE_SERVICE_ROLE_KEY.
  * Uso:
- *   npx tsx --env-file=.env.local scripts/create-user.ts <email> <owner|viewer> [clientId] [areaId]
+ *   npx tsx --env-file=.env.local scripts/create-user.mts <email> <owner|viewer> [clientId] [areaId]
  * La contraseña se pide por la variable USER_PASSWORD (no queda en el historial del shell si la exportas antes).
  */
 import { createClient } from "@supabase/supabase-js";
@@ -12,7 +12,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!email || (role !== "owner" && role !== "viewer") || !password || !url || !key) {
-  console.error("Uso: USER_PASSWORD=... npx tsx --env-file=.env.local scripts/create-user.ts <email> <owner|viewer> [clientId] [areaId]");
+  console.error("Uso: USER_PASSWORD=... npx tsx --env-file=.env.local scripts/create-user.mts <email> <owner|viewer> [clientId] [areaId]");
   console.error("Requiere NEXT_PUBLIC_SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en .env.local");
   process.exit(1);
 }
