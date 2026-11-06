@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireOwner } from "@/lib/auth";
 import { one, rows } from "@/lib/db";
 import { CRITERIA, DATA_STATE, DECISION } from "@/lib/labels";
-import { impactOf, quadrantOf, QUADRANT_LABEL, suggestDecision, IMPACT_MAX } from "@/lib/scoring";
+import { quadrantOf, QUADRANT_LABEL, suggestDecision, IMPACT_MAX } from "@/lib/scoring";
 import type { Area, Process, Score } from "@/lib/types";
 import { Field, Panel, SelectField, TextAreaField, opts } from "@/components/form";
 import { SubmitButton } from "@/components/submit-button";
