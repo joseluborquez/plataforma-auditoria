@@ -69,3 +69,17 @@ describe("horas", () => {
     expect(r.byClient.find((c) => c.clientId === "b")!.minPorEntrevista).toBeNull();
   });
 });
+
+import { coverageByArea } from "@/lib/coverage";
+describe("cobertura de entrevistas", () => {
+  it("elige el mejor estado por tipo", () => {
+    const areas = [{ id: "a1", client_id: "c", nombre: "RRHH", encargado_id: null }, { id: "a2", client_id: "c", nombre: "Ops", encargado_id: null }];
+    const cov = coverageByArea(areas, [
+      { area_id: "a1", tipo: "encargado", estado: "pendiente" },
+      { area_id: "a1", tipo: "encargado", estado: "realizada" },
+      { area_id: "a1", tipo: "trabajador", estado: "agendada" },
+    ]);
+    expect(cov[0]).toMatchObject({ encargado: "realizada", trabajador: "agendada" });
+    expect(cov[1]).toMatchObject({ encargado: null, trabajador: null });
+  });
+});
