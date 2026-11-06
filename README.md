@@ -2,6 +2,9 @@
 
 Herramienta interna para ordenar cada auditoría de procesos: clientes, áreas, entrevistas, procesos (SIPOC), mediciones de tiempo, priorización, hoja de ruta, documentos y registro de horas. Incluye un reporte de solo lectura imprimible a PDF para la gerencia del cliente.
 
+## Manual de uso
+`docs/manual-de-uso.pdf` es la guía paso a paso para empezar desde cero. Se regenera con `docs/generar-manual.py` (requiere `pip install reportlab`).
+
 ## Cómo correrlo
 1. `npm install`
 2. Copia `.env.example` a `.env.local` y completa los valores (Supabase → Project Settings → API).
