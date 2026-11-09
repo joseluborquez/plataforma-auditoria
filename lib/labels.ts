@@ -34,3 +34,7 @@ export const CRITERIA = [
 export const FREQ: Record<"diaria" | "semanal" | "mensual" | "otra", string> = {
   diaria: "Cada día", semanal: "Cada semana", mensual: "Cada mes", otra: "Otra",
 };
+
+export const STEP_TYPE: Record<"accion" | "decision" | "espera" | "sistema", string> = {
+  accion: "Acción", decision: "Decisión", espera: "Espera de otro", sistema: "En sistema",
+};

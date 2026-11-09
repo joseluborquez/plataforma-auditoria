@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Guide, GuideQuestion } from "@/lib/guide";
-import type { Freq, InterviewTask, Opt, TaskPatch } from "@/lib/types";
+import type { Freq, InterviewTask, Opt, ProcessStep, TaskPatch } from "@/lib/types";
 import {
   addTasksAction, createProcessesFromInterviewAction, finishInterviewAction, linkExistingProcessAction,
   removeTaskAction, saveAnswerAction, saveTimingAction, toggleCheckAction, unlinkProcessFromInterviewAction, updateTaskAction,
@@ -12,7 +12,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FREQ } from "@/lib/labels";
+import { ProcessDiagram } from "@/components/process-diagram";
+import { ProcessMap } from "@/components/process-map";
 import { TaskInventory } from "@/components/task-inventory";
+import { useProcessSteps } from "@/components/use-process-steps";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +34,7 @@ export type InterviewLiveProps = {
   initialChecks: string[];
   initialTiming: Record<number, number>;
   initialTasks: InterviewTask[];
+  initialSteps: Record<string, ProcessStep[]>;
   peopleNames: string[];
   linked: Opt[]; available: Opt[]; areas: Opt[];
   children: React.ReactNode;
@@ -115,12 +119,21 @@ export function InterviewLive(props: InterviewLiveProps) {
   useEffect(() => { retry.current = (key) => void flush(key); }, [flush]);
   useEffect(() => { retryTask.current = (pid) => void flushTask(pid); }, [flushTask]);
 
+  /** Envuelve una escritura de otro módulo para que cuente en el indicador «Guardando…». */
+  const track = useCallback(async <T,>(p: Promise<T>) => {
+    setInFlight((n) => n + 1);
+    try { const r = await p; setFailed(false); return r; } catch (e) { setFailed(true); throw e; } finally { setInFlight((n) => n - 1); }
+  }, []);
+  const stepsApi = useProcessSteps(clientId, props.initialSteps, track);
+  const flushSteps = stepsApi.flushAll;
+
   const flushAll = useCallback(async () => {
     await Promise.all([
       ...Object.keys(pending.current).map((k) => flush(k)),
       ...Object.keys(taskPending.current).map((k) => flushTask(k)),
+      flushSteps(),
     ]);
-  }, [flush, flushTask]);
+  }, [flush, flushTask, flushSteps]);
 
   const patchTask = useCallback((pid: string, patch: TaskPatch, delay = 0) => {
     if (!iid) return;
@@ -239,7 +252,7 @@ export function InterviewLive(props: InterviewLiveProps) {
   const totalDone = sectionStats.reduce((n, s) => n + s.done, 0);
   const totalSecs = Object.values(secs).reduce((n, v) => n + v, 0);
 
-  const status = readOnly ? null : failed ? "Sin conexión, reintentando…" : unsaved > 0 || inFlight > 0 ? "Guardando…" : "Guardado ✓";
+  const status = readOnly ? null : failed ? "Sin conexión, reintentando…" : unsaved + stepsApi.pendingCount > 0 || inFlight > 0 ? "Guardando…" : "Guardado ✓";
 
   /* ───────── Finalizar ───────── */
   const [finished, setFinished] = useState(false);
@@ -443,6 +456,15 @@ export function InterviewLive(props: InterviewLiveProps) {
                         )}
                       </div>
                     )}
+                    {s.kind === "detalle" && detailId && !readOnly && (
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-medium text-muted-foreground">Mapa del proceso: {starred.find((t) => t.process_id === detailId)?.nombre}</h3>
+                        <ProcessMap processId={detailId} steps={stepsApi.stepsOf(detailId)} api={stepsApi}
+                          actors={[...new Set([...props.peopleNames, "Sistema", "Cliente", "Proveedor"])]}
+                          tools={[...new Set([...["Excel", "Correo", "WhatsApp", "Papel", "Sistema propio"], ...starred.flatMap((t) => stepsApi.stepsOf(t.process_id).map((x) => x.herramienta ?? ""))].filter(Boolean))]} />
+                        <p className="pt-2 text-sm font-medium text-muted-foreground">Preguntas de apoyo</p>
+                      </div>
+                    )}
                     <ol className="space-y-3">
                       {s.preguntas.map((q, qi) => {
                         const target = s.kind === "detalle" ? detailId ?? undefined : undefined;
@@ -546,6 +568,12 @@ export function InterviewLive(props: InterviewLiveProps) {
               ) : targets.map((tg) => (
                 <div key={tg?.process_id ?? "general"} className="space-y-2">
                   {tg && <p className="text-sm font-medium underline">Tarea: {tg.nombre}</p>}
+                  {tg && stepsApi.stepsOf(tg.process_id).length > 0 && (
+                    <div className="break-inside-avoid">
+                      <ProcessDiagram steps={stepsApi.stepsOf(tg.process_id)} label={`Diagrama de ${tg.nombre}`} />
+                      <ol className="list-decimal pl-5 text-sm">{stepsApi.stepsOf(tg.process_id).map((x) => <li key={x.id}>{x.texto}{x.problema ? " ⚠" : ""}{x.nota ? ` — ${x.nota}` : ""}</li>)}</ol>
+                    </div>
+                  )}
                   <ol className="space-y-2 text-sm">
                     {s.preguntas.map((q, qi) => (
                       <li key={qi} className="break-inside-avoid">

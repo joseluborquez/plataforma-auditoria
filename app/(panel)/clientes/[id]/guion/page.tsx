@@ -4,7 +4,7 @@ import { GUIDES, POST_PROTOCOL, PRE_CHECKLIST, TIPS } from "@/lib/guide";
 import { requireOwner } from "@/lib/auth";
 import { rows } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import type { Area, Freq, Interview, InterviewTask, Person, Process } from "@/lib/types";
+import type { Area, Freq, Interview, InterviewTask, Person, Process, ProcessStep } from "@/lib/types";
 import { Panel } from "@/components/form";
 import { InterviewLive, type LiveAnswer } from "@/components/interview-live";
 import { cn } from "@/lib/utils";
@@ -38,6 +38,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
   let initialTiming: Record<number, number> = {};
   let linkedIds: string[] = [];
   let initialTasks: InterviewTask[] = [];
+  const initialSteps: Record<string, ProcessStep[]> = {};
   if (selected) {
     const [answers, checks, timing, links] = await Promise.all([
       supabase.from("interview_answers").select("pregunta_key, respuesta, no_aplica").eq("interview_id", selected.id)
@@ -52,6 +53,10 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
     initialChecks = checks.map((c) => c.item_key);
     initialTiming = Object.fromEntries(timing.map((t) => [t.seccion, t.segundos]));
     linkedIds = links.map((l) => l.process_id);
+    if (linkedIds.length) {
+      const steps = await supabase.from("process_steps").select("*").in("process_id", linkedIds).order("orden").then(rows<ProcessStep>);
+      for (const st of steps) (initialSteps[st.process_id] ??= []).push(st);
+    }
     initialTasks = links.map((l) => {
       const pr = Array.isArray(l.processes) ? l.processes[0] : l.processes;
       return {
@@ -89,7 +94,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
         interviews={interviews.map((i) => ({ id: i.id, label: label(i) }))}
         interview={selected ? { id: selected.id, estado: selected.estado, area_id: selected.area_id } : null}
         initialAnswers={initialAnswers} initialChecks={initialChecks} initialTiming={initialTiming}
-        initialTasks={initialTasks} peopleNames={peopleNames}
+        initialTasks={initialTasks} initialSteps={initialSteps} peopleNames={peopleNames}
         linked={processes.filter((p) => linkedIds.includes(p.id)).map(opt)}
         available={processes.filter((p) => !linkedIds.includes(p.id)).map(opt)}
         areas={areas.map((a) => ({ id: a.id, nombre: a.nombre }))}

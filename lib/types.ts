@@ -71,3 +71,12 @@ export type InterviewTask = {
 };
 export type TaskPatch = Partial<Pick<InterviewTask, "nombre" | "frecuencia" | "quien_hace" | "pesa_tiempo" | "molesta_errores" | "nota" | "para_detalle">>;
 export type Opt = { id: string; nombre: string; area_id?: string | null };
+
+export type StepType = "accion" | "decision" | "espera" | "sistema";
+/** Paso del mapa de un proceso. Solo dueño. */
+export type ProcessStep = {
+  id: string; process_id: string; orden: number; texto: string; tipo: StepType;
+  actor: string | null; herramienta: string | null; minutos_min: number | null; minutos_max: number | null;
+  problema: boolean; nota: string | null;
+};
+export type StepPatch = Partial<Omit<ProcessStep, "id" | "process_id">>;
