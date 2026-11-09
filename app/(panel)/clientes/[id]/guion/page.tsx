@@ -2,7 +2,12 @@ import Link from "next/link";
 import { EFFORT_RUBRIC, RUBRIC } from "@/lib/rubric";
 import { GUIDES, POST_PROTOCOL, PRE_CHECKLIST, TIPS } from "@/lib/guide";
 import { requireOwner } from "@/lib/auth";
-import { Panel } from "@/components/form";
+import { rows } from "@/lib/db";
+import { formatDateTime } from "@/lib/format";
+import type { Interview, Person } from "@/lib/types";
+import { Panel, TextAreaField } from "@/components/form";
+import { SubmitButton } from "@/components/submit-button";
+import { saveAnswersAction } from "./actions";
 import { PrintButton } from "@/components/print-button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -10,10 +15,26 @@ import { cn } from "@/lib/utils";
 export default async function GuionPage({ params, searchParams }: PageProps<"/clientes/[id]/guion">) {
   const { id } = await params;
   const sp = await searchParams;
-  await requireOwner();
+  const { supabase } = await requireOwner();
   const tipo = sp.tipo === "trabajador" ? "trabajador" : "encargado";
   const guide = GUIDES[tipo];
   const total = guide.secciones.reduce((n, s) => n + s.minutos, 0);
+
+  const [interviews, people] = await Promise.all([
+    supabase.from("interviews").select("*").eq("client_id", id).eq("tipo", tipo)
+      .order("fecha_hora", { ascending: false, nullsFirst: false }).then(rows<Interview>),
+    supabase.from("people").select("*").eq("client_id", id).then(rows<Person>),
+  ]);
+  const names = Object.fromEntries(people.map((p) => [p.id, p.nombre]));
+  const label = (i: Interview) => `${names[i.person_id ?? ""] ?? "Sin persona"} · ${formatDateTime(i.fecha_hora)}`;
+  const selected = interviews.find((i) => i.id === sp.entrevista) ?? interviews[0] ?? null;
+  const answers = new Map(
+    selected
+      ? rows<{ pregunta_key: string; respuesta: string }>(
+          await supabase.from("interview_answers").select("pregunta_key, respuesta").eq("interview_id", selected.id),
+        ).map((a) => [a.pregunta_key, a.respuesta])
+      : [],
+  );
 
   return (
     <div className="space-y-6">
@@ -29,6 +50,23 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
         <PrintButton />
       </div>
 
+      <Panel className="no-print" title="Respuestas de esta entrevista">
+        {interviews.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No hay entrevistas de este tipo. Crea una en <Link href={`/clientes/${id}/entrevistas`} className="text-primary hover:underline">Entrevistas</Link> para registrar las respuestas aquí.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2 text-sm">
+            {interviews.map((i) => (
+              <Link key={i.id} href={`/clientes/${id}/guion?tipo=${tipo}&entrevista=${i.id}`}
+                className={cn("rounded-md border px-3 py-1", selected?.id === i.id ? "border-primary bg-accent" : "text-muted-foreground hover:text-foreground")}>
+                {label(i)}
+              </Link>
+            ))}
+          </div>
+        )}
+      </Panel>
+
       <div>
         <h2 className="text-xl font-semibold">{guide.titulo}</h2>
         <p className="text-sm text-muted-foreground">{guide.resumen} Suma de tiempos: {total} min.</p>
@@ -43,8 +81,8 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
         </Panel>
       </div>
 
-      <div className="space-y-4">
-        {guide.secciones.map((s) => (
+      <form action={selected ? saveAnswersAction.bind(null, id, selected.id) : undefined} className="space-y-4">
+        {guide.secciones.map((s, si) => (
           <Panel key={s.titulo} className="break-inside-avoid">
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-medium">{s.titulo}</h3>
@@ -55,17 +93,26 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
               {s.preguntas.map((q, i) => (
                 <li key={i} className="flex gap-3">
                   <span className="font-mono text-xs text-muted-foreground">{i + 1}.</span>
-                  <div className="space-y-1">
+                  <div className="min-w-0 flex-1 space-y-1">
                     <p>{q.texto}</p>
                     {q.sondeo && <p className="text-xs text-muted-foreground">Sondeo: {q.sondeo}</p>}
                     {q.campo && <Badge variant="secondary">→ {q.campo}</Badge>}
+                    {selected && (
+                      <TextAreaField key={`${selected.id}-s${si}q${i}`} label="Respuesta" name={`r_s${si}q${i}`} rows={3}
+                        defaultValue={answers.get(`s${si}q${i}`) ?? ""} placeholder="Escribe aquí lo que respondió la persona" />
+                    )}
                   </div>
                 </li>
               ))}
             </ol>
           </Panel>
         ))}
-      </div>
+        {selected && (
+          <div className="no-print sticky bottom-3 flex justify-end">
+            <div className="rounded-xl border bg-card p-2 shadow-sm"><SubmitButton>Guardar respuestas</SubmitButton></div>
+          </div>
+        )}
+      </form>
 
       <Panel title="Consejos de entrevista">
         <ul className="list-disc space-y-1 pl-5 text-sm">{TIPS.map((t) => <li key={t}>{t}</li>)}</ul>
