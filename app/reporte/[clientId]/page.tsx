@@ -9,6 +9,7 @@ import { quadrantOf, QUADRANT_LABEL } from "@/lib/scoring";
 import { methodology } from "@/lib/methodology";
 import type { Area, DocumentRow, Measurement, Phase, ReportProcess, RoadmapItem, Score } from "@/lib/types";
 import { PrintButton } from "@/components/print-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { logout } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +56,7 @@ export default async function ReportePage({ params }: PageProps<"/reporte/[clien
         </div>
         <div className="no-print flex gap-2">
           {role === "owner" && <Link href={`/clientes/${clientId}`} className="self-center text-sm text-muted-foreground hover:text-foreground">← Panel</Link>}
+          <ThemeToggle />
           <PrintButton />
           <form action={logout}><Button type="submit" variant="ghost" size="sm">Salir</Button></form>
         </div>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireOwner } from "@/lib/auth";
 import { logout } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default async function PanelLayout({ children }: LayoutProps<"/">) {
   const { user } = await requireOwner();
@@ -17,6 +18,7 @@ export default async function PanelLayout({ children }: LayoutProps<"/">) {
           <Link href="/horas" className="rounded-md px-2 py-1.5 hover:bg-accent">Horas</Link>
         </nav>
         <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+        <ThemeToggle className="mt-2 w-full" />
         <form action={logout} className="mt-2">
           <Button type="submit" variant="outline" size="sm" className="w-full">Salir</Button>
         </form>
