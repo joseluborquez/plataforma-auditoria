@@ -1,8 +1,8 @@
 // Guion base de entrevistas (Cono Austral SpA y similares). Editable: es solo contenido.
 // `campo` indica a qué campo de la ficha del proceso alimenta la respuesta.
 
-/** control: "check" = acuerdo marcable; "sino" = Sí/No; "check_nota" = marcable con una nota corta. Sin control = respuesta de texto. */
-export type GuideQuestion = { texto: string; campo?: string; sondeo?: string; control?: "check" | "sino" | "check_nota" };
+/** control: "check" = acuerdo marcable; "sino" = Sí/No; "check_nota" = marcable con una nota corta (`nota` es su texto de ayuda). Sin control = respuesta de texto. */
+export type GuideQuestion = { texto: string; campo?: string; sondeo?: string; control?: "check" | "sino" | "check_nota"; nota?: string };
 /** kind: "checklist" = acuerdos marcables; "inventario" = tabla de captura rápida de tareas; "detalle" = ficha rápida por cada tarea elegida; "problemas" = lista de problemas ligados a procesos; "prioridades" = prioridad, idea, restricciones y quién aprueba por tarea. */
 export type GuideSection = { titulo: string; minutos: number; objetivo: string; preguntas: GuideQuestion[]; kind?: "checklist" | "inventario" | "detalle" | "problemas" | "prioridades" };
 export type Guide = { titulo: string; resumen: string; secciones: GuideSection[] };
@@ -15,7 +15,7 @@ const APERTURA_ENCARGADO: GuideSection = {
     { texto: "Acordamos la confidencialidad: el informe para la gerencia muestra hallazgos por proceso, nunca quién dijo qué.", campo: "Notas privadas", control: "check" },
     { texto: "Pedí permiso para tomar notas.", control: "check" },
     { texto: "¿Autoriza grabar audio? (solo para uso interno)", control: "sino" },
-    { texto: "Pregunté si hay algo que prefiera que no quede registrado.", control: "check_nota" },
+    { texto: "Pregunté si hay algo que prefiera que no quede registrado.", control: "check_nota", nota: "Anota qué no debe quedar registrado (opcional)" },
   ],
 };
 
@@ -79,12 +79,13 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
         ],
       },
       {
-        titulo: "7. Cierre", minutos: 5,
+        titulo: "7. Cierre", minutos: 5, kind: "checklist",
         objetivo: "Confirmar acuerdos y dejar la siguiente etapa agendada.",
         preguntas: [
-          { texto: "Resumir en voz alta los procesos que se levantaron y confirmar que están bien entendidos." },
-          { texto: "Pedir documentos de apoyo: planillas de ejemplo, formularios, reportes, procedimientos escritos." },
-          { texto: "¿A qué trabajador del área conviene entrevistar? Pedir autorización para cronometrar una tarea." },
+          { texto: "Resumí en voz alta los procesos que se levantaron y confirmé que están bien entendidos.", control: "check" },
+          { texto: "Pedí documentos de apoyo: planillas de ejemplo, formularios, reportes, procedimientos escritos.", control: "check_nota", nota: "¿Cuáles y quién los envía? (opcional)" },
+          { texto: "Pregunté a qué trabajador del área conviene entrevistar.", control: "check_nota", nota: "Nombre o cargo de la persona sugerida (opcional)" },
+          { texto: "¿Autoriza que cronometremos una tarea?", control: "sino" },
         ],
       },
     ],

@@ -877,7 +877,7 @@ function ControlItem({ q, k, a, checked, readOnly, onChange, onFlush, onToggle }
         <span>{q.texto}</span>
       </label>
       {q.control === "check_nota" && !readOnly && (
-        <input value={a.respuesta} maxLength={500} aria-label="Nota" placeholder="Anota qué no debe quedar registrado (opcional)"
+        <input value={a.respuesta} maxLength={500} aria-label="Nota" placeholder={q.nota ?? "Nota (opcional)"}
           onChange={(e) => onChange(k, { respuesta: e.target.value })} onBlur={() => onFlush(k)}
           className="ml-6 h-8 w-[calc(100%-1.5rem)] rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
       )}
