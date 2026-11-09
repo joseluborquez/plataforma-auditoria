@@ -9,31 +9,35 @@ import { formatDateTime } from "@/lib/format";
 import { quadrantOf, QUADRANT_LABEL, suggestDecision, IMPACT_MAX } from "@/lib/scoring";
 import { conditionHints, scoreHints } from "@/lib/problems";
 import { topValues } from "@/lib/process-sheet";
-import type { Area, Interview, InterviewProblem, Person, Process, ProcessStep, Score } from "@/lib/types";
+import type { Area, Freq, Interview, InterviewProblem, Person, Process, ProcessStep, Score } from "@/lib/types";
 import { ProcessSheetStandalone } from "@/components/process-sheet-standalone";
+import { ScoreForm } from "@/components/score-form";
+import { suggestScores } from "@/lib/score-suggest";
 import { Field, Panel, SelectField, TextAreaField, opts } from "@/components/form";
 import { SubmitButton } from "@/components/submit-button";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { Badge } from "@/components/ui/badge";
 import { deleteProcessAction, linkInterviewAction, saveScoreAction, updateProcessAction } from "../actions";
 
-const ONE_TO_FIVE = [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) }));
 
 export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/procesos/[pid]">) {
   const { id, pid } = await params;
   const { supabase } = await requireOwner();
-  const [p, areas, score, interviews, people, links, meas, steps, allProcs, problems] = await Promise.all([
+  const [p, areas, score, interviews, people, links, meas, steps, allProcs, problems, lastMeas] = await Promise.all([
+
     supabase.from("processes").select("*").eq("id", pid).eq("client_id", id).maybeSingle().then(one<Process>),
     supabase.from("areas").select("*").eq("client_id", id).order("nombre").then(rows<Area>),
     supabase.from("scores").select("*").eq("process_id", pid).maybeSingle().then(one<Score>),
     supabase.from("interviews").select("*").eq("client_id", id).order("fecha_hora", { ascending: false, nullsFirst: false }).then(rows<Interview>),
     supabase.from("people").select("*").eq("client_id", id).then(rows<Person>),
-    supabase.from("interview_processes").select("interview_id, prioridad, idea, restricciones, aprueba").eq("process_id", pid)
-      .then(rows<{ interview_id: string; prioridad: 1 | 2 | 3 | null; idea: string | null; restricciones: string[] | null; aprueba: string | null }>),
+    supabase.from("interview_processes").select("interview_id, prioridad, idea, restricciones, aprueba, frecuencia").eq("process_id", pid)
+      .then(rows<{ interview_id: string; prioridad: 1 | 2 | 3 | null; idea: string | null; restricciones: string[] | null; aprueba: string | null; frecuencia: Freq | null }>),
     supabase.from("time_measurements").select("id", { count: "exact", head: true }).eq("process_id", pid),
     supabase.from("process_steps").select("*").eq("process_id", pid).order("orden").then(rows<ProcessStep>),
     supabase.from("processes").select("sipoc").eq("client_id", id).then(rows<Pick<Process, "sipoc">>),
     supabase.from("interview_problems").select("*").eq("process_id", pid).order("created_at").then(rows<InterviewProblem>),
+    supabase.from("time_measurements").select("minutos_por_vez, veces_por_semana, personas").eq("process_id", pid).eq("tipo", "linea_base")
+      .order("fecha", { ascending: false }).limit(1).then(rows<{ minutos_por_vez: number; veces_por_semana: number; personas: number }>),
   ]);
   if (!p) notFound();
   const sip = p.sipoc ?? { proveedores: [], entradas: [], proceso: [], salidas: [], clientes: [] };
@@ -45,6 +49,15 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
     return i ? `${formatDateTime(i.fecha_hora)} · ${INTERVIEW_TYPE[i.tipo]} · ${personName[i.person_id ?? ""] ?? "Sin persona"}` : "Entrevista";
   };
   const hints = [...scoreHints(problems), ...conditionHints(links)];
+  const suggestions = suggestScores({
+    frecuencias: links.flatMap((l) => (l.frecuencia ? [l.frecuencia] : [])),
+    measurement: lastMeas[0] ? { minutos_por_vez: Number(lastMeas[0].minutos_por_vez), veces_por_semana: Number(lastMeas[0].veces_por_semana), personas: Number(lastMeas[0].personas) } : null,
+    steps, fields: { estado_datos: p.estado_datos, excepciones: p.excepciones ?? [] }, problems,
+    restricciones: links.flatMap((l) => l.restricciones ?? []), aprueban: links.flatMap((l) => (l.aprueba ? [l.aprueba] : [])),
+    actores: [...new Set(steps.map((x) => x.actor?.trim()).filter((x): x is string => !!x))]
+      .filter((a) => !["sistema", "cliente", "proveedor"].includes(a.toLowerCase()))
+      .map((a) => ({ nombre: a, cargo: people.find((x) => x.nombre.toLowerCase() === a.toLowerCase())?.cargo ?? null })),
+  });
   const withConditions = links.filter((l) => l.prioridad || l.idea || l.aprueba || (l.restricciones?.length ?? 0) > 0);
   const stageHint = suggestStage(p, (meas.count ?? 0) > 0, !!score);
   const suggestion = score ? suggestDecision(score.impacto, score.esfuerzo, score.riesgo_legal) : null;
@@ -141,6 +154,7 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
                 <p className="font-medium">{r.label} <span className="font-normal text-muted-foreground">— {r.pregunta}</span></p>
                 <ul className="ml-4 list-disc text-xs text-muted-foreground">
                   <li><b>1:</b> {r.uno}</li><li><b>3:</b> {r.tres}</li><li><b>5:</b> {r.cinco}</li>
+                  <li><b>Cómo se mide:</b> {r.medida}</li>
                 </ul>
               </div>
             ))}
@@ -153,16 +167,8 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
             {suggestion && <span className="text-muted-foreground">Sugerencia: {DECISION[suggestion]}</span>}
           </p>
         )}
-        <form action={saveScoreAction.bind(null, id, pid)} className="grid gap-3 sm:grid-cols-3">
-          {CRITERIA.map(([k, label]) => (
-            <SelectField key={k} label={`${label} (1-5)`} name={k} required options={ONE_TO_FIVE}
-              defaultValue={String(score?.[k] ?? 3)} />
-          ))}
-          <SelectField label="Esfuerzo de implementar (1-5)" name="esfuerzo" required options={ONE_TO_FIVE} defaultValue={String(score?.esfuerzo ?? 3)} />
-          <SelectField label="Decisión" name="decision" emptyLabel="Sin decidir" options={opts(DECISION)} defaultValue={score?.decision} />
-          <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" name="riesgo_legal" defaultChecked={score?.riesgo_legal} /> Riesgo legal</label>
-          <div className="sm:col-span-3"><SubmitButton>Guardar puntuación</SubmitButton></div>
-        </form>
+        <ScoreForm action={saveScoreAction.bind(null, id, pid)} score={score} suggestions={suggestions} criteria={CRITERIA}
+          decisionOptions={opts(DECISION).map((o) => ({ value: o.value, label: o.label }))} />
         <p className="mt-3 text-xs text-muted-foreground">Impacto = suma de los seis criterios (6 a 30). 1 = poco favorable a automatizar, 5 = muy favorable.</p>
       </Panel>
 

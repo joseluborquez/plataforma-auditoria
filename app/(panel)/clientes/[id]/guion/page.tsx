@@ -126,6 +126,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
             {[...RUBRIC, { key: "esfuerzo", pregunta: "Para el esfuerzo, 5 = más difícil de implementar.", ...EFFORT_RUBRIC }].map((r) => (
               <div key={r.key} className="break-inside-avoid">
                 <p className="font-medium">{r.label} <span className="font-normal text-muted-foreground">— {r.pregunta}</span></p>
+                <p className="text-xs text-muted-foreground"><b>Cómo se mide:</b> {r.medida}</p>
                 <dl className="mt-1 grid gap-1 sm:grid-cols-3">
                   {([["1", r.uno], ["3", r.tres], ["5", r.cinco]] as const).map(([n, t]) => (
                     <div key={n} className="rounded border p-2"><dt className="font-mono text-xs text-muted-foreground">{n}</dt><dd>{t}</dd></div>

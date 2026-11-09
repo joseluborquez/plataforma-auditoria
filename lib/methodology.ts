@@ -30,6 +30,7 @@ export function methodology(cliente: string): MethodSection[] {
       titulo: "Evidencia y confiabilidad",
       items: [
         "Los tiempos declarados en entrevista son estimaciones; los cronometrados o de sistema tienen mayor respaldo. Cada comparación indica cuál es el caso.",
+        "El puntaje de cada criterio se apoya en lo levantado (frecuencia y tiempos, estado de los datos, errores y excepciones reportados). Donde faltó evidencia, el criterio se evaluó con juicio profesional y se indica como estimado.",
         "Los procesos se contrastan con el encargado del área antes de considerarse validados.",
         "Las declaraciones de las personas son confidenciales: el informe presenta hallazgos por proceso, sin atribuirlos a nadie.",
       ],
