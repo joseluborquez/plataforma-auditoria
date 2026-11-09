@@ -8,7 +8,7 @@ import { ConfirmDelete } from "@/components/confirm-delete";
 import { Badge } from "@/components/ui/badge";
 import {
   createAreaAction, createPersonAction, deleteAreaAction, deleteClientAction,
-  deletePersonAction, setEncargadoAction, updateClientAction,
+  deletePersonAction, setEncargadoAction, updateClientAction, updatePersonAction,
 } from "../actions";
 
 export default async function ResumenPage({ params }: PageProps<"/clientes/[id]">) {
@@ -23,6 +23,7 @@ export default async function ResumenPage({ params }: PageProps<"/clientes/[id]"
     supabase.from("processes").select("id", { count: "exact", head: true }).eq("client_id", id),
   ]);
   if (!client) return null;
+  const isEncargado = (p: Person) => p.es_encargado || areas.some((a) => a.encargado_id === p.id);
   const done = interviews.filter((i) => i.estado === "realizada").length;
   const totalMin = logs.reduce((s, l) => s + l.minutos, 0);
 
@@ -69,14 +70,32 @@ export default async function ResumenPage({ params }: PageProps<"/clientes/[id]"
           {people.length === 0 && <Empty>Sin personas registradas.</Empty>}
           <ul className="divide-y">
             {people.map((p) => (
-              <li key={p.id} className="flex items-start justify-between gap-2 py-2">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{p.nombre} {p.es_encargado && <Badge variant="secondary">Encargado</Badge>}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {[p.cargo, areas.find((a) => a.id === p.area_id)?.nombre, p.email, p.telefono].filter(Boolean).join(" · ")}
-                  </p>
-                </div>
-                <ConfirmDelete action={deletePersonAction.bind(null, id, p.id)} what={p.nombre} />
+              <li key={p.id} className="py-2">
+                <details className="group">
+                  <summary className="flex cursor-pointer list-none items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{p.nombre} {isEncargado(p) && <Badge variant="secondary">Encargado</Badge>}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {[p.cargo, areas.find((a) => a.id === p.area_id)?.nombre, p.email, p.telefono].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-primary underline-offset-2 group-open:hidden hover:underline">Editar</span>
+                    <span className="hidden shrink-0 text-xs text-muted-foreground group-open:inline">Cerrar</span>
+                  </summary>
+                  <form action={updatePersonAction.bind(null, id, p.id)} className="mt-3 grid gap-3 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
+                    <Field label="Nombre" name="nombre" id={`nombre-${p.id}`} defaultValue={p.nombre} required />
+                    <Field label="Cargo" name="cargo" id={`cargo-${p.id}`} defaultValue={p.cargo} />
+                    <Field label="Correo" name="email" id={`email-${p.id}`} type="email" defaultValue={p.email} />
+                    <Field label="Teléfono" name="telefono" id={`telefono-${p.id}`} defaultValue={p.telefono} />
+                    <SelectField label="Área" name="area_id" id={`area-${p.id}`} emptyLabel="Sin área" defaultValue={p.area_id}
+                      options={areas.map((a) => ({ value: a.id, label: a.nombre }))} />
+                    <label className="flex items-center gap-2 self-end pb-2 text-sm">
+                      <input type="checkbox" name="es_encargado" defaultChecked={isEncargado(p)} /> Es encargado del área
+                    </label>
+                    <div className="sm:col-span-2"><SubmitButton size="sm">Guardar cambios</SubmitButton></div>
+                  </form>
+                  <div className="mt-2 text-right"><ConfirmDelete action={deletePersonAction.bind(null, id, p.id)} what={p.nombre} /></div>
+                </details>
               </li>
             ))}
           </ul>

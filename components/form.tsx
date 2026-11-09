@@ -6,15 +6,16 @@ import { cn } from "@/lib/utils";
 type Opt = { value: string; label: string };
 
 export function Field({
-  label, name, type = "text", defaultValue, required, placeholder, className, min, max, step,
+  label, name, id, type = "text", defaultValue, required, placeholder, className, min, max, step,
 }: {
+  id?: string;
   label: string; name: string; type?: string; defaultValue?: string | number | null;
   required?: boolean; placeholder?: string; className?: string; min?: number; max?: number; step?: number | string;
 }) {
   return (
     <div className={cn("space-y-1.5", className)}>
-      <Label htmlFor={name}>{label}</Label>
-      <Input id={name} name={name} type={type} defaultValue={defaultValue ?? ""} required={required}
+      <Label htmlFor={id ?? name}>{label}</Label>
+      <Input id={id ?? name} name={name} type={type} defaultValue={defaultValue ?? ""} required={required}
         placeholder={placeholder} min={min} max={max} step={step} />
     </div>
   );
@@ -32,16 +33,17 @@ export function TextAreaField({
 }
 
 export function SelectField({
-  label, name, options, defaultValue, required, emptyLabel, className,
+  label, name, id, options, defaultValue, required, emptyLabel, className,
 }: {
+  id?: string;
   label: string; name: string; options: Opt[]; defaultValue?: string | null;
   required?: boolean; emptyLabel?: string; className?: string;
 }) {
   return (
     <div className={cn("space-y-1.5", className)}>
-      <Label htmlFor={name}>{label}</Label>
+      <Label htmlFor={id ?? name}>{label}</Label>
       <select
-        id={name} name={name} defaultValue={defaultValue ?? ""} required={required}
+        id={id ?? name} name={name} defaultValue={defaultValue ?? ""} required={required}
         className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}

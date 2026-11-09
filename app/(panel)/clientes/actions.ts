@@ -58,8 +58,12 @@ export async function deleteAreaAction(clientId: string, areaId: string) {
 
 export async function setEncargadoAction(clientId: string, areaId: string, fd: FormData) {
   const { supabase } = await requireOwner();
-  check(await supabase.from("areas").update({ encargado_id: opt(fd.get("encargado_id")) }).eq("id", areaId));
-  revalidatePath(`/clientes/${clientId}`);
+  const encargadoId = opt(fd.get("encargado_id"));
+  check(await supabase.from("areas").update({ encargado_id: encargadoId }).eq("id", areaId));
+  // Mantener la marca de la persona en sincronía con el encargado del área.
+  check(await supabase.from("people").update({ es_encargado: false }).eq("area_id", areaId).eq("es_encargado", true));
+  if (encargadoId) check(await supabase.from("people").update({ es_encargado: true }).eq("id", encargadoId));
+  revalidatePath(`/clientes/${clientId}`, "layout");
 }
 
 export async function createPersonAction(clientId: string, fd: FormData) {
@@ -78,6 +82,27 @@ export async function createPersonAction(clientId: string, fd: FormData) {
     check(await supabase.from("areas").update({ encargado_id: res.data!.id }).eq("id", area_id));
   }
   revalidatePath(`/clientes/${clientId}`);
+}
+
+export async function updatePersonAction(clientId: string, personId: string, fd: FormData) {
+  const { supabase } = await requireOwner();
+  const nombre = z.string().trim().min(1, "El nombre es obligatorio").parse(fd.get("nombre"));
+  const email = opt(fd.get("email"));
+  if (email) z.string().email("Correo inválido").parse(email);
+  const area_id = opt(fd.get("area_id"));
+  const es_encargado = fd.get("es_encargado") === "on";
+  check(await supabase.from("people").update({
+    area_id, nombre, cargo: opt(fd.get("cargo")), email,
+    telefono: opt(fd.get("telefono")), es_encargado,
+  }).eq("id", personId));
+  // Mantener coherente el encargado del área: se libera el área que ya no corresponde.
+  let release = supabase.from("areas").update({ encargado_id: null }).eq("encargado_id", personId);
+  if (es_encargado && area_id) release = release.neq("id", area_id);
+  check(await release);
+  if (es_encargado && area_id) {
+    check(await supabase.from("areas").update({ encargado_id: personId }).eq("id", area_id));
+  }
+  revalidatePath(`/clientes/${clientId}`, "layout");
 }
 
 export async function deletePersonAction(clientId: string, personId: string) {
