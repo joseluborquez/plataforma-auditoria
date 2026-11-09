@@ -472,7 +472,7 @@ export function InterviewLive(props: InterviewLiveProps) {
                         {detailId && !readOnly && (() => {
                           const task = starred.find((t) => t.process_id === detailId);
                           return (
-                            <ProcessSheet key={detailId} clientId={clientId} processId={detailId}
+                            <ProcessSheet key={detailId} clientId={clientId} processId={detailId} name={task?.nombre}
                               steps={stepsApi.stepsOf(detailId)} fields={fieldsApi.fieldsOf(detailId)} stepsApi={stepsApi}
                               onFields={(p, d) => fieldsApi.patch(detailId, p, d)}
                               actors={[...new Set([...props.peopleNames, "Sistema", "Cliente", "Proveedor"])]}

@@ -35,8 +35,8 @@ function Pick({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 }
 
 /** Ficha rápida de un proceso: todo con chips y un mapa; lo demás se calcula desde los pasos. */
-export function ProcessSheet({ clientId, processId, steps, fields, stepsApi, onFields, actors, tools, sipocSuggestions, defaultVeces, defaultMetodo }: {
-  clientId: string; processId: string; steps: ProcessStep[]; fields: ProcessFields; stepsApi: StepsApi;
+export function ProcessSheet({ clientId, processId, name, steps, fields, stepsApi, onFields, actors, tools, sipocSuggestions, defaultVeces, defaultMetodo }: {
+  clientId: string; processId: string; name?: string; steps: ProcessStep[]; fields: ProcessFields; stepsApi: StepsApi;
   onFields: (p: FieldsPatch, delay?: number) => void; actors: string[]; tools: string[]; sipocSuggestions: SipocSuggestions;
   defaultVeces: number | null; defaultMetodo: "declarado" | "cronometrado";
 }) {
@@ -75,7 +75,7 @@ export function ProcessSheet({ clientId, processId, steps, fields, stepsApi, onF
           className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring" />
       </Block>
 
-      <ProcessMap processId={processId} steps={steps} actors={actors} tools={tools} api={stepsApi} />
+      <ProcessMap processId={processId} name={name} steps={steps} actors={actors} tools={tools} api={stepsApi} />
 
       <Block title="Entradas y salidas" hint="SIPOC: lo que entra, lo que sale y con quién se relaciona. El «Proceso» son los pasos de arriba.">
         <div className="grid gap-4 md:grid-cols-2">

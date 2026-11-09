@@ -139,5 +139,6 @@
   .no-print { display: none !important; }
   .print-only { display: block !important; }
   .print-break { break-before: page; }
+  svg[role="img"] { max-width: 100% !important; height: auto !important; }
   body { background: #fff !important; color: #111 !important; }
 }

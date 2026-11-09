@@ -7,7 +7,8 @@ import { DATA_STATE, DECISION, PHASE, PRIORITY, RM_STATUS } from "@/lib/labels";
 import { compare } from "@/lib/measurements";
 import { quadrantOf, QUADRANT_LABEL } from "@/lib/scoring";
 import { methodology } from "@/lib/methodology";
-import type { Area, DocumentRow, Measurement, Phase, ReportProcess, RoadmapItem, Score } from "@/lib/types";
+import type { Area, DocumentRow, Measurement, Phase, ProcessStep, ReportProcess, RoadmapItem, Score } from "@/lib/types";
+import { ProcessDiagram } from "@/components/process-diagram";
 import { PrintButton } from "@/components/print-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { logout } from "@/app/login/actions";
@@ -33,10 +34,14 @@ export default async function ReportePage({ params }: PageProps<"/reporte/[clien
     supabase.from("documents").select("*").eq("client_id", clientId).eq("confidencial", false).then(rows<DocumentRow>),
   ]);
   const ids = processes.map((p) => p.id);
-  const [scores, ms] = ids.length ? await Promise.all([
+  const [scores, ms, stepRows] = ids.length ? await Promise.all([
     supabase.from("scores").select("*").in("process_id", ids).then(rows<Score>),
     supabase.from("report_measurements").select("*").in("process_id", ids).then(rows<Measurement>),
-  ]) : [[] as Score[], [] as Measurement[]];
+    supabase.from("report_process_steps").select("*").in("process_id", ids).order("orden").then(rows<Omit<ProcessStep, "nota">>),
+  ]) : [[] as Score[], [] as Measurement[], [] as Omit<ProcessStep, "nota">[]];
+  // La vista no entrega notas ni nombres de personas.
+  const stepsOf = new Map<string, ProcessStep[]>();
+  for (const st of stepRows) stepsOf.set(st.process_id, [...(stepsOf.get(st.process_id) ?? []), { ...st, nota: null }]);
   const scoreOf = new Map(scores.map((s) => [s.process_id, s]));
   const signed = docs.length ? (await supabase.storage.from("documents").createSignedUrls(docs.map((d) => d.ruta_storage), 3600)).data ?? [] : [];
   const urlOf = new Map(signed.flatMap((s) => (s.path && s.signedUrl ? [[s.path, s.signedUrl] as [string, string]] : [])));
@@ -104,7 +109,14 @@ export default async function ReportePage({ params }: PageProps<"/reporte/[clien
                       </div>
                     </div>
                     {p.disparador && <p className="text-sm"><span className="text-muted-foreground">Disparador: </span>{p.disparador}</p>}
-                    {p.pasos?.length > 0 && <ol className="list-decimal pl-5 text-sm">{p.pasos.map((x, i) => <li key={i}>{x}</li>)}</ol>}
+                    {(stepsOf.get(p.id)?.length ?? 0) > 0 ? (
+                      <div className="space-y-2">
+                        <ProcessDiagram steps={stepsOf.get(p.id)!} label={`Diagrama de ${p.nombre}`} downloadName={`${client.nombre} - ${p.nombre}`} />
+                        {stepsOf.get(p.id)!.some((x) => x.problema) && (
+                          <p className="text-xs text-muted-foreground">Los pasos marcados con <span className="font-bold text-destructive">!</span> son donde se detectaron problemas (errores, retrabajo o esperas).</p>
+                        )}
+                      </div>
+                    ) : p.pasos?.length > 0 && <ol className="list-decimal pl-5 text-sm">{p.pasos.map((x, i) => <li key={i}>{x}</li>)}</ol>}
                     {p.herramientas?.length > 0 && <p className="text-sm"><span className="text-muted-foreground">Herramientas: </span>{p.herramientas.join(", ")}</p>}
                     {p.problemas && <p className="whitespace-pre-line text-sm"><span className="text-muted-foreground">Problemas: </span>{p.problemas}</p>}
                     {p.sipoc && (

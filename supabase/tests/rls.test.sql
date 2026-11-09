@@ -38,8 +38,10 @@ insert into public.processes (id, client_id, area_id, nombre, responsable, evide
   ('20000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-00000000000b', 'a0000000-0000-0000-0000-0000000000b1', 'Proceso B1', 'Resp B1', 'Evid B1');
 insert into public.interview_processes (interview_id, process_id, frecuencia, quien_hace, pesa_tiempo, nota, para_detalle) values
   ('10000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1', 'semanal', 'QUIEN PRIVADO', true, 'NOTA TAREA PRIVADA', true);
-insert into public.process_steps (process_id, orden, texto, actor, herramienta, minutos_min, minutos_max, problema) values
-  ('20000000-0000-0000-0000-0000000000a1', 0, 'PASO PRIVADO', 'ACTOR PRIVADO', 'Excel', 5, 10, true);
+insert into public.process_steps (process_id, orden, texto, actor, herramienta, minutos_min, minutos_max, problema, nota) values
+  ('20000000-0000-0000-0000-0000000000a1', 0, 'PASO PRIVADO', 'ACTOR PRIVADO', 'Excel', 5, 10, true, 'NOTA PASO PRIVADA'),
+  ('20000000-0000-0000-0000-0000000000a1', 1, 'Paso en sistema', 'Sistema', null, null, null, false, null),
+  ('20000000-0000-0000-0000-0000000000a1', 2, 'Otro paso', 'Otra Persona', null, null, null, false, null);
 insert into public.time_measurements (process_id, tipo, minutos_por_vez, veces_por_semana, fecha, fuente) values
   ('20000000-0000-0000-0000-0000000000a1', 'linea_base', 60, 1, current_date, 'fuente a1'),
   ('20000000-0000-0000-0000-0000000000a2', 'linea_base', 30, 1, current_date, 'fuente a2'),
@@ -98,6 +100,7 @@ select pg_temp.expect('owner ve interview_notes', (select count(*) from public.i
 select pg_temp.expect('owner ve el inventario de la entrevista', (select count(*) from public.interview_processes where frecuencia = 'semanal' and para_detalle and nota = 'NOTA TAREA PRIVADA'), 1);
 select pg_temp.expect_denied('frecuencia inválida rechazada', $q$update public.interview_processes set frecuencia = 'cada_luna'$q$);
 select pg_temp.expect('owner ve los pasos del proceso', (select count(*) from public.process_steps where texto = 'PASO PRIVADO'), 1);
+select pg_temp.expect('owner ve las personas reales en la tabla', (select count(*) from public.process_steps where actor = 'ACTOR PRIVADO'), 1);
 select pg_temp.expect_denied('rango de pasos inválido rechazado', $q$update public.process_steps set minutos_min = 20, minutos_max = 1$q$);
 select pg_temp.expect('owner ve interview_answers', (select count(*) from public.interview_answers where respuesta = 'RESPUESTA PRIVADA'), 1);
 select pg_temp.expect('owner ve interview_checks y timing', (select count(*) from public.interview_checks) + (select count(*) from public.interview_timing), 2);
@@ -108,6 +111,11 @@ reset role;
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000b1');
 select pg_temp.expect('viewer: 0 interview_notes', (select count(*) from public.interview_notes), 0);
 select pg_temp.expect('viewer: 0 process_steps (tabla base)', (select count(*) from public.process_steps), 0);
+select pg_temp.expect('viewer ve los pasos de su alcance por la vista', (select count(*) from public.report_process_steps), 3);
+select pg_temp.expect('vista de pasos no revela personas', (select count(*) from public.report_process_steps where actor in ('ACTOR PRIVADO', 'Otra Persona')), 0);
+select pg_temp.expect('vista de pasos numera a las personas', (select count(*) from public.report_process_steps where actor in ('Persona 1', 'Persona 2')), 2);
+select pg_temp.expect('vista de pasos conserva el rol Sistema', (select count(*) from public.report_process_steps where actor = 'Sistema'), 1);
+select pg_temp.expect_denied('vista de pasos sin notas', 'select nota from public.report_process_steps');
 select pg_temp.expect_denied('viewer no escribe pasos', $q$insert into public.process_steps (process_id, orden, texto) values ('20000000-0000-0000-0000-0000000000a1', 1, 'x')$q$);
 select pg_temp.expect('viewer: 0 interview_answers', (select count(*) from public.interview_answers), 0);
 select pg_temp.expect('viewer: 0 interview_checks', (select count(*) from public.interview_checks), 0);
@@ -162,6 +170,7 @@ select pg_temp.expect('docs intactos', (select count(*) from public.documents wh
 
 -- ═════════ VIEWER DE ÁREA A1 ═════════
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000b2');
+select pg_temp.expect('área: ve los pasos del proceso A1', (select count(*) from public.report_process_steps), 3);
 select pg_temp.expect('área: ve solo proceso A1', (select count(*) from public.report_processes), 1);
 select pg_temp.expect('área: no ve proceso A2', (select count(*) from public.report_processes where nombre = 'Proceso A2'), 0);
 select pg_temp.expect('área: roadmap solo de A1 (sin general ni A2)', (select count(*) from public.report_roadmap), 1);
@@ -172,6 +181,7 @@ reset role;
 
 -- ═════════ VIEWER DEL CLIENTE B: no ve datos de A ═════════
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000b3');
+select pg_temp.expect('B no ve pasos de A', (select count(*) from public.report_process_steps), 0);
 select pg_temp.expect('B no ve proceso de A', (select count(*) from public.report_processes where nombre like 'Proceso A%'), 0);
 select pg_temp.expect('B ve su proceso', (select count(*) from public.report_processes), 1);
 select pg_temp.expect('B no ve scores de A', (select count(*) from public.scores where process_id = '20000000-0000-0000-0000-0000000000a1'), 0);
@@ -191,6 +201,7 @@ select pg_temp.expect_denied('anon no lee clients', 'select * from public.client
 select pg_temp.expect_denied('anon no lee vista', 'select * from public.report_processes');
 select pg_temp.expect_denied('anon no lee notas', 'select * from public.interview_notes');
 select pg_temp.expect_denied('anon no lee pasos', 'select * from public.process_steps');
+select pg_temp.expect_denied('anon no lee pasos del reporte', 'select * from public.report_process_steps');
 select pg_temp.expect_denied('anon no lee respuestas', 'select * from public.interview_answers');
 select pg_temp.expect_denied('anon no lee checklists', 'select * from public.interview_checks');
 select pg_temp.expect_denied('anon no lee tiempos', 'select * from public.interview_timing');

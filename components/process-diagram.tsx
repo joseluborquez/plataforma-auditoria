@@ -1,20 +1,39 @@
-import { useId } from "react";
+"use client";
+
+import { useId, useRef, useState } from "react";
+import { downloadPng, downloadSvg } from "@/lib/export-svg";
 import { HEAD_H, LANE_W, NODE_H, NODE_W, layoutSteps } from "@/lib/process-map";
 import type { ProcessStep } from "@/lib/types";
 
 /** Diagrama de flujo en carriles, dibujado a partir de los pasos. Usa las variables de color del tema. */
-export function ProcessDiagram({ steps, onSelect, label = "Diagrama del proceso" }: {
-  steps: ProcessStep[]; onSelect?: (stepId: string) => void; label?: string;
+export function ProcessDiagram({ steps, onSelect, label = "Diagrama del proceso", downloadName }: {
+  steps: ProcessStep[]; onSelect?: (stepId: string) => void; label?: string; downloadName?: string;
 }) {
   const uid = useId();
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const marker = `arrow-${uid.replace(/:/g, "")}`;
   const l = layoutSteps(steps);
   if (l.nodes.length === 0) {
     return <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">El diagrama aparecerá aquí a medida que agregues pasos.</p>;
   }
   return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${l.width} ${l.height}`} width={l.width} height={l.height} role="img" aria-label={label} className="max-w-none">
+    <div className="space-y-2">
+      {downloadName && (
+        <div className="no-print flex flex-wrap items-center gap-2 text-xs">
+          <button type="button" className="rounded-md border px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => { setExportError(null); if (svgRef.current) void downloadPng(svgRef.current, downloadName).catch((e: unknown) => setExportError(e instanceof Error ? e.message : "No se pudo exportar")); }}>
+            Descargar imagen (PNG)
+          </button>
+          <button type="button" className="rounded-md border px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => svgRef.current && downloadSvg(svgRef.current, downloadName)}>
+            Descargar SVG
+          </button>
+          {exportError && <span className="text-destructive">{exportError}</span>}
+        </div>
+      )}
+      <div className="overflow-x-auto">
+      <svg ref={svgRef} viewBox={`0 0 ${l.width} ${l.height}`} width={l.width} height={l.height} role="img" aria-label={label} className="max-w-none">
         <defs>
           <marker id={marker} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="var(--muted-foreground)" />
@@ -73,6 +92,7 @@ export function ProcessDiagram({ steps, onSelect, label = "Diagrama del proceso"
           );
         })}
       </svg>
+      </div>
     </div>
   );
 }

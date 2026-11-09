@@ -34,8 +34,8 @@ function Chip({ on, onClick, label, children }: { on: boolean; onClick: () => vo
 const inputCls = "h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring";
 
 /** Constructor de pasos con diagrama en vivo para un proceso. */
-export function ProcessMap({ processId, steps, actors, tools, api }: {
-  processId: string; steps: ProcessStep[]; actors: string[]; tools: string[]; api: StepsApi;
+export function ProcessMap({ processId, name, steps, actors, tools, api }: {
+  processId: string; name?: string; steps: ProcessStep[]; actors: string[]; tools: string[]; api: StepsApi;
 }) {
   const uid = useId().replace(/:/g, "");
   const [draft, setDraft] = useState("");
@@ -160,7 +160,7 @@ export function ProcessMap({ processId, steps, actors, tools, api }: {
       <div className="min-w-0 2xl:sticky 2xl:top-28 2xl:self-start">
         <div className="rounded-xl border bg-card p-3">
           <h3 className="mb-2 text-sm font-medium text-muted-foreground">Diagrama (se dibuja solo)</h3>
-          <ProcessDiagram steps={steps} onSelect={focusStep} />
+          <ProcessDiagram steps={steps} onSelect={focusStep} downloadName={name ?? "Diagrama del proceso"} label={name ? `Diagrama de ${name}` : undefined} />
           <p className="mt-2 text-[11px] text-muted-foreground">▭ acción · ◇ decisión · ⏳ espera (línea punteada) · ⚙ en sistema (barra azul) · rojo = problema</p>
         </div>
       </div>
