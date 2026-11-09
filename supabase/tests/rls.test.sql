@@ -36,8 +36,8 @@ insert into public.processes (id, client_id, area_id, nombre, responsable, evide
   ('20000000-0000-0000-0000-0000000000a1', 'c0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-0000000000a1', 'Proceso A1', 'Resp A1', 'Evid A1'),
   ('20000000-0000-0000-0000-0000000000a2', 'c0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-0000000000a2', 'Proceso A2', 'Resp A2', 'Evid A2'),
   ('20000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-00000000000b', 'a0000000-0000-0000-0000-0000000000b1', 'Proceso B1', 'Resp B1', 'Evid B1');
-insert into public.interview_processes (interview_id, process_id) values
-  ('10000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1');
+insert into public.interview_processes (interview_id, process_id, frecuencia, quien_hace, pesa_tiempo, nota, para_detalle) values
+  ('10000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1', 'semanal', 'QUIEN PRIVADO', true, 'NOTA TAREA PRIVADA', true);
 insert into public.time_measurements (process_id, tipo, minutos_por_vez, veces_por_semana, fecha, fuente) values
   ('20000000-0000-0000-0000-0000000000a1', 'linea_base', 60, 1, current_date, 'fuente a1'),
   ('20000000-0000-0000-0000-0000000000a2', 'linea_base', 30, 1, current_date, 'fuente a2'),
@@ -93,6 +93,8 @@ grant execute on all functions in schema pg_temp to public;
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1');
 select pg_temp.expect('owner ve clients', (select count(*) from public.clients where nombre in ('Cliente A','Cliente B')), 2);
 select pg_temp.expect('owner ve interview_notes', (select count(*) from public.interview_notes where notas_privadas = 'PRIVADO'), 1);
+select pg_temp.expect('owner ve el inventario de la entrevista', (select count(*) from public.interview_processes where frecuencia = 'semanal' and para_detalle and nota = 'NOTA TAREA PRIVADA'), 1);
+select pg_temp.expect_denied('frecuencia inválida rechazada', $q$update public.interview_processes set frecuencia = 'cada_luna'$q$);
 select pg_temp.expect('owner ve interview_answers', (select count(*) from public.interview_answers where respuesta = 'RESPUESTA PRIVADA'), 1);
 select pg_temp.expect('owner ve interview_checks y timing', (select count(*) from public.interview_checks) + (select count(*) from public.interview_timing), 2);
 select pg_temp.expect('owner ve time_log', (select count(*) from public.time_log where client_id = 'c0000000-0000-0000-0000-00000000000a'), 1);
@@ -144,10 +146,11 @@ select pg_temp.expect_denied('viewer no escribe horas', $q$insert into public.ti
 update public.profiles set role = 'owner';  -- sin política de UPDATE: afecta 0 filas (se verifica abajo)
 select pg_temp.expect_denied('viewer no se da alcance', $q$insert into public.viewers (user_id, client_id) values ('00000000-0000-0000-0000-0000000000b1','c0000000-0000-0000-0000-00000000000b')$q$);
 -- UPDATE/DELETE no afectan filas (RLS las oculta)
-update public.areas set nombre = 'hack'; delete from public.documents;
+update public.areas set nombre = 'hack'; delete from public.documents; update public.interview_processes set pesa_tiempo = false;
 reset role;
 select pg_temp.expect('viewer no se promueve a owner', (select count(*) from public.profiles where role = 'owner' and user_id::text like '00000000-0000-0000-0000-0000000000b%'), 0);
 select pg_temp.expect('areas intactas', (select count(*) from public.areas where nombre = 'hack'), 0);
+select pg_temp.expect('inventario intacto', (select count(*) from public.interview_processes where pesa_tiempo), 1);
 select pg_temp.expect('docs intactos', (select count(*) from public.documents where ruta_storage in ('ta/pub.pdf','ta/conf.pdf','ta/pub2.pdf','tb/pub.pdf')), 4);
 
 -- ═════════ VIEWER DE ÁREA A1 ═════════

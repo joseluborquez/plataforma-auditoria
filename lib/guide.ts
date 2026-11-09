@@ -1,18 +1,21 @@
 // Guion base de entrevistas (Cono Austral SpA y similares). Editable: es solo contenido.
 // `campo` indica a qué campo de la ficha del proceso alimenta la respuesta.
 
-export type GuideQuestion = { texto: string; campo?: string; sondeo?: string };
-export type GuideSection = { titulo: string; minutos: number; objetivo: string; preguntas: GuideQuestion[] };
+/** control: "check" = acuerdo marcable; "sino" = Sí/No; "check_nota" = marcable con una nota corta. Sin control = respuesta de texto. */
+export type GuideQuestion = { texto: string; campo?: string; sondeo?: string; control?: "check" | "sino" | "check_nota" };
+/** kind: "checklist" = acuerdos marcables; "inventario" = tabla de captura rápida de tareas; "detalle" = preguntas repetidas por cada tarea elegida. */
+export type GuideSection = { titulo: string; minutos: number; objetivo: string; preguntas: GuideQuestion[]; kind?: "checklist" | "inventario" | "detalle" };
 export type Guide = { titulo: string; resumen: string; secciones: GuideSection[] };
 
 const APERTURA_ENCARGADO: GuideSection = {
-  titulo: "1. Apertura y acuerdos", minutos: 10,
+  titulo: "1. Apertura y acuerdos", minutos: 10, kind: "checklist",
   objetivo: "Generar confianza y dejar claras las reglas: para qué sirve, qué se hace con lo conversado y qué no se atribuye a nadie.",
   preguntas: [
-    { texto: "Explicar el objetivo: entender cómo se trabaja hoy para encontrar tareas que se puedan automatizar o mejorar. No es una evaluación de personas." },
-    { texto: "Acordar la confidencialidad: el informe para la gerencia muestra hallazgos por proceso, nunca quién dijo qué.", campo: "Notas privadas" },
-    { texto: "Pedir permiso para tomar notas (y, si corresponde, grabar audio solo para uso interno)." },
-    { texto: "¿Hay algo que prefiera que no quede registrado?" },
+    { texto: "Expliqué el objetivo: entender cómo se trabaja hoy para encontrar tareas que se puedan automatizar o mejorar. No es una evaluación de personas.", control: "check" },
+    { texto: "Acordamos la confidencialidad: el informe para la gerencia muestra hallazgos por proceso, nunca quién dijo qué.", campo: "Notas privadas", control: "check" },
+    { texto: "Pedí permiso para tomar notas.", control: "check" },
+    { texto: "¿Autoriza grabar audio? (solo para uso interno)", control: "sino" },
+    { texto: "Pregunté si hay algo que prefiera que no quede registrado.", control: "check_nota" },
   ],
 };
 
@@ -33,7 +36,7 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
         ],
       },
       {
-        titulo: "3. Inventario de tareas recurrentes", minutos: 25,
+        titulo: "3. Inventario de tareas recurrentes", minutos: 25, kind: "inventario",
         objetivo: "Listar TODO lo que se repite, sin profundizar todavía. Luego elegir 2 o 3 para detallar.",
         preguntas: [
           { texto: "Pensemos en un mes típico: ¿qué tareas se repiten cada día, cada semana y cada mes?", campo: "Inventario rápido (procesos)" },
@@ -44,7 +47,7 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
         ],
       },
       {
-        titulo: "4. Detalle de procesos (repetir por cada uno)", minutos: 40,
+        titulo: "4. Detalle de procesos (repetir por cada uno)", minutos: 40, kind: "detalle",
         objetivo: "Documentar el proceso paso a paso con un ejemplo real y reciente, no con lo que “debería” pasar.",
         preguntas: [
           { texto: "¿Qué hace que este proceso parta? ¿Un correo, una fecha, una falla, una solicitud?", campo: "Disparador" },
@@ -92,16 +95,16 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
     resumen: "El trabajo real del día a día: mostrar cómo se hace, atajos y fricciones. Duración sugerida: 120 minutos (con parte de observación).",
     secciones: [
       {
-        titulo: "1. Apertura y confidencialidad", minutos: 10,
+        titulo: "1. Apertura y confidencialidad", minutos: 10, kind: "checklist",
         objetivo: "Que la persona se sienta segura. Aquí la confidencialidad es lo más importante.",
         preguntas: [
-          { texto: "Explicar el objetivo: entender cómo se hace el trabajo para mejorarlo. No se evalúa a nadie." },
-          { texto: "Dejar explícito: nada de lo que diga se atribuirá a usted en el informe ni se comparte con su jefatura con su nombre.", campo: "Notas privadas" },
-          { texto: "Pedir permiso para tomar notas." },
+          { texto: "Expliqué el objetivo: entender cómo se hace el trabajo para mejorarlo. No se evalúa a nadie.", control: "check" },
+          { texto: "Dejé explícito: nada de lo que diga se atribuirá a usted en el informe ni se comparte con su jefatura con su nombre.", campo: "Notas privadas", control: "check" },
+          { texto: "Pedí permiso para tomar notas.", control: "check" },
         ],
       },
       {
-        titulo: "2. Un día típico", minutos: 20,
+        titulo: "2. Un día típico", minutos: 20, kind: "inventario",
         objetivo: "Ver el panorama de cómo se reparte el tiempo.",
         preguntas: [
           { texto: "Cuénteme su día de ayer, desde que llegó hasta que se fue." },
@@ -110,7 +113,7 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
         ],
       },
       {
-        titulo: "3. Recorrido de una tarea real", minutos: 45,
+        titulo: "3. Recorrido de una tarea real", minutos: 45, kind: "detalle",
         objetivo: "Que la persona muestre la tarea en vivo: pantalla, planilla, papel, correo. Contar pasos y medir.",
         preguntas: [
           { texto: "Muéstreme cómo hace [tarea elegida], con el último caso que le tocó.", campo: "Pasos", sondeo: "Pedir que lo haga o lo muestre. Anotar cada clic o cada paso." },

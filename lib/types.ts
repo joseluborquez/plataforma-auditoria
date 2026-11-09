@@ -61,3 +61,13 @@ export type DocumentRow = {
 export type TimeLog = {
   id: string; fecha: string; client_id: string; actividad: Activity; minutos: number; detalle: string | null;
 };
+
+export type Freq = "diaria" | "semanal" | "mensual" | "otra";
+/** Una tarea declarada en una entrevista (vínculo entrevista ↔ proceso). Solo dueño. */
+export type InterviewTask = {
+  process_id: string; nombre: string; area_id: string | null;
+  frecuencia: Freq | null; quien_hace: string | null;
+  pesa_tiempo: boolean; molesta_errores: boolean; nota: string | null; para_detalle: boolean;
+};
+export type TaskPatch = Partial<Pick<InterviewTask, "nombre" | "frecuencia" | "quien_hace" | "pesa_tiempo" | "molesta_errores" | "nota" | "para_detalle">>;
+export type Opt = { id: string; nombre: string; area_id?: string | null };

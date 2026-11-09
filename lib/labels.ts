@@ -30,3 +30,7 @@ export const CRITERIA = [
   ["errores_retrabajo", "Errores / retrabajo"],
   ["quien_lo_asume", "Quién lo asume (carga)"],
 ] as const;
+
+export const FREQ: Record<"diaria" | "semanal" | "mensual" | "otra", string> = {
+  diaria: "Cada día", semanal: "Cada semana", mensual: "Cada mes", otra: "Otra",
+};

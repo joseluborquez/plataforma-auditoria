@@ -3,18 +3,20 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import type { Guide } from "@/lib/guide";
+import type { Guide, GuideQuestion } from "@/lib/guide";
+import type { Freq, InterviewTask, Opt, TaskPatch } from "@/lib/types";
 import {
-  createProcessesFromInterviewAction, finishInterviewAction, linkExistingProcessAction,
-  saveAnswerAction, saveTimingAction, toggleCheckAction, unlinkProcessFromInterviewAction,
+  addTasksAction, createProcessesFromInterviewAction, finishInterviewAction, linkExistingProcessAction,
+  removeTaskAction, saveAnswerAction, saveTimingAction, toggleCheckAction, unlinkProcessFromInterviewAction, updateTaskAction,
 } from "@/app/(panel)/clientes/[id]/guion/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FREQ } from "@/lib/labels";
+import { TaskInventory } from "@/components/task-inventory";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 export type LiveAnswer = { respuesta: string; no_aplica: boolean };
-type Opt = { id: string; nombre: string };
 type Step = { kind: "pre" } | { kind: "section"; index: number } | { kind: "post" } | { kind: "rubrica" };
 
 export type InterviewLiveProps = {
@@ -28,12 +30,15 @@ export type InterviewLiveProps = {
   initialAnswers: Record<string, LiveAnswer>;
   initialChecks: string[];
   initialTiming: Record<number, number>;
+  initialTasks: InterviewTask[];
+  peopleNames: string[];
   linked: Opt[]; available: Opt[]; areas: Opt[];
   children: React.ReactNode;
 };
 
 const EMPTY: LiveAnswer = { respuesta: "", no_aplica: false };
-const keyOf = (s: number, q: number) => `s${s}q${q}`;
+/** Clave de una pregunta; en secciones de detalle lleva el id de la tarea. */
+const keyOf = (s: number, q: number, task?: string) => (task ? `s${s}q${q}:${task}` : `s${s}q${q}`);
 const mmss = (t: number) => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 
 export function InterviewLive(props: InterviewLiveProps) {
@@ -53,12 +58,17 @@ export function InterviewLive(props: InterviewLiveProps) {
 
   /* ───────── Respuestas con guardado automático ───────── */
   const [answers, setAnswers] = useState(props.initialAnswers);
+  const [tasks, setTasks] = useState(props.initialTasks);
+  const taskPending = useRef<Record<string, TaskPatch>>({});
+  const taskTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const retryTask = useRef<(pid: string) => void>(() => {});
   const pending = useRef<Record<string, LiveAnswer>>({});
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [unsaved, setUnsaved] = useState(0);
   const [inFlight, setInFlight] = useState(0);
   const [failed, setFailed] = useState(false);
   const retry = useRef<(key: string) => void>(() => {});
+  const recount = useCallback(() => setUnsaved(Object.keys(pending.current).length + Object.keys(taskPending.current).length), []);
   const answersRef = useRef(answers);
   useEffect(() => { answersRef.current = answers; }, [answers]);
 
@@ -67,7 +77,7 @@ export function InterviewLive(props: InterviewLiveProps) {
     const a = pending.current[key];
     if (!a || !iid) return;
     delete pending.current[key];
-    setUnsaved(Object.keys(pending.current).length);
+    recount();
     setInFlight((n) => n + 1);
     try {
       await saveAnswerAction(clientId, iid, key, a.respuesta, a.no_aplica);
@@ -75,28 +85,89 @@ export function InterviewLive(props: InterviewLiveProps) {
     } catch {
       setFailed(true);
       if (!pending.current[key]) pending.current[key] = a;
-      setUnsaved(Object.keys(pending.current).length);
+      recount();
       timers.current[key] = setTimeout(() => retry.current(key), 5000);
     } finally {
       setInFlight((n) => n - 1);
     }
-  }, [clientId, iid]);
+  }, [clientId, iid, recount]);
+
+  const flushTask = useCallback(async (pid: string) => {
+    clearTimeout(taskTimers.current[pid]);
+    const p = taskPending.current[pid];
+    if (!p || !iid) return;
+    delete taskPending.current[pid];
+    recount();
+    setInFlight((n) => n + 1);
+    try {
+      await updateTaskAction(clientId, iid, pid, p);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+      taskPending.current[pid] = { ...p, ...taskPending.current[pid] };
+      recount();
+      taskTimers.current[pid] = setTimeout(() => retryTask.current(pid), 5000);
+    } finally {
+      setInFlight((n) => n - 1);
+    }
+  }, [clientId, iid, recount]);
 
   useEffect(() => { retry.current = (key) => void flush(key); }, [flush]);
+  useEffect(() => { retryTask.current = (pid) => void flushTask(pid); }, [flushTask]);
 
   const flushAll = useCallback(async () => {
-    await Promise.all(Object.keys(pending.current).map((k) => flush(k)));
-  }, [flush]);
+    await Promise.all([
+      ...Object.keys(pending.current).map((k) => flush(k)),
+      ...Object.keys(taskPending.current).map((k) => flushTask(k)),
+    ]);
+  }, [flush, flushTask]);
+
+  const patchTask = useCallback((pid: string, patch: TaskPatch, delay = 0) => {
+    if (!iid) return;
+    setTasks((prev) => prev.map((t) => (t.process_id === pid ? { ...t, ...patch } : t)));
+    taskPending.current[pid] = { ...taskPending.current[pid], ...patch };
+    recount();
+    clearTimeout(taskTimers.current[pid]);
+    taskTimers.current[pid] = setTimeout(() => void flushTask(pid), delay);
+  }, [iid, recount, flushTask]);
+
+  async function addTasks(names: string[], areaId: string, frecuencia: Freq | null) {
+    if (!iid) return;
+    const created = await addTasksAction(clientId, iid, areaId, names, frecuencia);
+    setTasks((prev) => [...prev, ...created]);
+    startTransition(() => router.refresh());
+  }
+  async function removeTask(pid: string) {
+    if (!iid) return;
+    clearTimeout(taskTimers.current[pid]);
+    delete taskPending.current[pid];
+    recount();
+    await removeTaskAction(clientId, iid, pid);
+    setTasks((prev) => prev.filter((t) => t.process_id !== pid));
+    startTransition(() => router.refresh());
+  }
+  async function linkTask(pid: string) {
+    if (!iid) return;
+    const proc = available.find((p) => p.id === pid);
+    await linkExistingProcessAction(clientId, iid, pid);
+    if (proc) {
+      setTasks((prev) => [...prev, {
+        process_id: pid, nombre: proc.nombre, area_id: proc.area_id ?? null, frecuencia: null, quien_hace: null,
+        pesa_tiempo: false, molesta_errores: false, nota: null, para_detalle: false,
+      }]);
+    }
+    startTransition(() => router.refresh());
+  }
 
   const change = useCallback((key: string, patch: Partial<LiveAnswer>) => {
     if (!iid) return;
     const next = { ...(pending.current[key] ?? answersRef.current[key] ?? EMPTY), ...patch };
     pending.current[key] = next;
     setAnswers((prev) => ({ ...prev, [key]: { ...(prev[key] ?? EMPTY), ...patch } }));
-    setUnsaved(Object.keys(pending.current).length);
+    recount();
     clearTimeout(timers.current[key]);
     timers.current[key] = setTimeout(() => void flush(key), patch.respuesta !== undefined ? 800 : 50);
-  }, [iid, flush]);
+  }, [iid, flush, recount]);
 
   /* ───────── Cronómetro por sección ───────── */
   const [secs, setSecs] = useState(props.initialTiming);
@@ -149,10 +220,21 @@ export function InterviewLive(props: InterviewLiveProps) {
 
   /* ───────── Avance ───────── */
   const isDone = (a?: LiveAnswer) => !!a && (a.no_aplica || a.respuesta.trim() !== "");
+  const qDone = (q: GuideQuestion, k: string) =>
+    q.control === "check" || q.control === "check_nota" ? checks.has(k)
+      : q.control === "sino" ? answers[k]?.respuesta === "si" || answers[k]?.respuesta === "no"
+        : isDone(answers[k]);
+  const starred = tasks.filter((t) => t.para_detalle);
   const sectionStats = guide.secciones.map((s, si) => {
-    const done = s.preguntas.filter((_, qi) => isDone(answers[keyOf(si, qi)])).length;
-    return { total: s.preguntas.length, done };
+    if (s.kind === "inventario") return { total: tasks.length, done: tasks.filter((t) => t.frecuencia).length };
+    const targets: (string | undefined)[] = s.kind === "detalle" && starred.length ? starred.map((t) => t.process_id) : [undefined];
+    let done = 0;
+    for (const tg of targets) s.preguntas.forEach((q, qi) => { if (qDone(q, keyOf(si, qi, tg))) done++; });
+    return { total: s.preguntas.length * targets.length, done };
   });
+  const [detailSel, setDetailSel] = useState<string | null | undefined>(undefined);
+  const detailId = detailSel === undefined || (detailSel !== null && !starred.some((t) => t.process_id === detailSel))
+    ? starred[0]?.process_id ?? null : detailSel;
   const totalQ = sectionStats.reduce((n, s) => n + s.total, 0);
   const totalDone = sectionStats.reduce((n, s) => n + s.done, 0);
   const totalSecs = Object.values(secs).reduce((n, v) => n + v, 0);
@@ -199,7 +281,7 @@ export function InterviewLive(props: InterviewLiveProps) {
               {finished ? "realizada" : interview.estado}
             </Badge>
           )}
-          <span className="font-mono text-xs text-muted-foreground">{totalDone}/{totalQ} preguntas</span>
+          <span className="font-mono text-xs text-muted-foreground">{totalDone}/{totalQ} respondidos</span>
           {!readOnly && <span className="font-mono text-xs text-muted-foreground">⏱ {mmss(totalSecs)} / {guide.secciones.reduce((n, s) => n + s.minutos, 0)} min</span>}
           <span className="ml-auto flex items-center gap-3">
             {status && <span aria-live="polite" className={cn("text-xs", failed ? "text-destructive" : "text-muted-foreground")}>{status}</span>}
@@ -222,7 +304,7 @@ export function InterviewLive(props: InterviewLiveProps) {
         <nav aria-label="Secciones del guion" className="flex gap-1 overflow-x-auto pb-1 lg:sticky lg:top-24 lg:flex-col lg:self-start lg:overflow-visible">
           {steps.map((s, i) => {
             const st = s.kind === "section" ? sectionStats[s.index] : null;
-            const complete = st ? st.done === st.total : s.kind === "pre" ? pre.every((_, k) => checks.has(`pre:${k}`)) : s.kind === "post" ? post.every((_, k) => checks.has(`post:${k}`)) : false;
+            const complete = st ? st.total > 0 && st.done === st.total : s.kind === "pre" ? pre.every((_, k) => checks.has(`pre:${k}`)) : s.kind === "post" ? post.every((_, k) => checks.has(`post:${k}`)) : false;
             const planned = s.kind === "section" ? guide.secciones[s.index].minutos : 0;
             const spent = s.kind === "section" ? secs[s.index] ?? 0 : 0;
             return (
@@ -284,52 +366,98 @@ export function InterviewLive(props: InterviewLiveProps) {
                   {!readOnly && spent > planned && <p className="mt-2 text-xs text-destructive">Te pasaste {mmss(spent - planned)} del tiempo planificado para esta sección.</p>}
                 </div>
 
-                <ol className="space-y-3">
-                  {s.preguntas.map((q, qi) => {
-                    const key = keyOf(step.index, qi);
-                    const a = answers[key] ?? EMPTY;
-                    const done = isDone(a);
-                    return (
-                      <li key={`${iid}-${key}`} className={cn("rounded-xl border bg-card p-4 transition-colors", done && "border-primary/40")}>
-                        <div className="flex gap-3">
-                          <span className={cn("mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border font-mono text-xs", done && "border-primary bg-primary text-primary-foreground")}>
-                            {done ? "✓" : qi + 1}
-                          </span>
-                          <div className="min-w-0 flex-1 space-y-2">
-                            <p className="text-base font-medium leading-snug">{q.texto}</p>
-                            {q.sondeo && (
-                              <details className="text-sm text-muted-foreground">
-                                <summary className="cursor-pointer text-xs hover:text-foreground">Ver sondeo</summary>
-                                <p className="mt-1">{q.sondeo}</p>
-                              </details>
-                            )}
-                            {q.campo && <Badge variant="secondary">→ {q.campo}</Badge>}
-                            {!readOnly && (
-                              <>
-                                <Textarea value={a.respuesta} disabled={a.no_aplica} rows={3} aria-label={`Respuesta a: ${q.texto}`}
-                                  placeholder={a.no_aplica ? "Marcada como «no aplica»" : "Escribe aquí lo que respondió la persona"}
-                                  // Los manejadores solo se ejecutan en eventos, no durante el render.
-                                  // eslint-disable-next-line react-hooks/refs
-                                  onChange={(e) => change(key, { respuesta: e.target.value })}
-                                  // eslint-disable-next-line react-hooks/refs
-                                  onBlur={() => void flush(key)} />
-                                <label className="flex w-fit cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                                  <input type="checkbox" checked={a.no_aplica} onChange={(e) => change(key, { no_aplica: e.target.checked })} />
-                                  No aplica / no se habló
-                                </label>
-                              </>
+                {s.kind === "checklist" ? (
+                  <div className="rounded-xl border bg-card p-4">
+                    <ul className="space-y-2">
+                      {s.preguntas.map((q, qi) => {
+                        const k = keyOf(step.index, qi);
+                        return (
+                          <li key={`${iid}-${k}`}><ControlItem q={q} k={k} a={answers[k] ?? EMPTY} checked={checks.has(k)} readOnly={readOnly}
+                            onChange={change} onFlush={flush} onToggle={toggle} /></li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : s.kind === "inventario" ? (
+                  <>
+                    <details open className="rounded-xl border bg-card p-4">
+                      <summary className="cursor-pointer text-sm font-medium text-muted-foreground">Preguntas guía para la conversación</summary>
+                      <ul className="mt-3 space-y-2 text-sm">
+                        {s.preguntas.map((q, qi) => (
+                          <li key={qi} className="space-y-1">
+                            <p>{qi + 1}. {q.texto}</p>
+                            {q.sondeo && <p className="text-xs text-muted-foreground">Sondeo: {q.sondeo}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                    {readOnly ? (
+                      <p className="text-sm text-muted-foreground">Elige una entrevista para registrar las tareas.</p>
+                    ) : (
+                      <TaskInventory tasks={tasks} areas={areas} defaultAreaId={interview?.area_id ?? null} peopleNames={props.peopleNames}
+                        available={available.filter((p) => !tasks.some((t) => t.process_id === p.id))}
+                        onAdd={addTasks} onPatch={patchTask} onRemove={removeTask} onLink={linkTask} />
+                    )}
+                    {(() => {
+                      const legacy = s.preguntas.map((q, qi) => ({ q, a: answers[keyOf(step.index, qi)] })).filter((x) => x.a?.respuesta.trim());
+                      return legacy.length > 0 && (
+                        <details className="rounded-xl border bg-card p-4 text-sm">
+                          <summary className="cursor-pointer text-xs text-muted-foreground">Notas guardadas antes en estas preguntas ({legacy.length})</summary>
+                          <ul className="mt-2 space-y-2">
+                            {legacy.map(({ q, a }, i) => <li key={i}><p className="text-xs text-muted-foreground">{q.texto}</p><p className="whitespace-pre-wrap">{a!.respuesta}</p></li>)}
+                          </ul>
+                        </details>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <>
+                    {s.kind === "detalle" && (
+                      <div className="space-y-2 rounded-xl border bg-card p-3">
+                        {starred.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">
+                            Aún no elegiste tareas para detallar. Marca <b>⭐ Detallar</b> en el{" "}
+                            <button type="button" className="text-primary hover:underline"
+                              onClick={() => goTo(guide.secciones.findIndex((x) => x.kind === "inventario") + 1)}>inventario</button>
+                            {" "}y volverán aquí, una por una.
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Tarea que se está detallando:</span>
+                            {starred.map((t) => {
+                              const dn = s.preguntas.filter((q, qi) => qDone(q, keyOf(step.index, qi, t.process_id))).length;
+                              return (
+                                <button key={t.process_id} type="button" aria-pressed={detailId === t.process_id}
+                                  onClick={() => setDetailSel(t.process_id)}
+                                  className={cn("rounded-md border px-2.5 py-1 text-sm", detailId === t.process_id ? "border-primary bg-accent" : "text-muted-foreground hover:text-foreground")}>
+                                  {t.nombre} <span className="font-mono text-[11px]">{dn}/{s.preguntas.length}</span>
+                                </button>
+                              );
+                            })}
+                            <button type="button" aria-pressed={detailId === null} onClick={() => setDetailSel(null)}
+                              className={cn("rounded-md border px-2.5 py-1 text-sm", detailId === null ? "border-primary bg-accent" : "text-muted-foreground hover:text-foreground")}>General</button>
+                            {detailId && (
+                              <Link href={`/clientes/${clientId}/procesos/${detailId}`} target="_blank" className="ml-auto text-xs text-primary hover:underline">Abrir ficha del proceso ↗</Link>
                             )}
                           </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-
-                {!readOnly && iid && (
-                  <ProcessesCard clientId={clientId} interviewId={iid} defaultAreaId={interview?.area_id ?? null}
-                    linked={linked} available={available} areas={areas}
-                    openByDefault={/inventario|detalle|recorrido|tareas/i.test(s.titulo)} />
+                        )}
+                      </div>
+                    )}
+                    <ol className="space-y-3">
+                      {s.preguntas.map((q, qi) => {
+                        const target = s.kind === "detalle" ? detailId ?? undefined : undefined;
+                        const k = keyOf(step.index, qi, target);
+                        return (
+                          <li key={`${iid}-${k}`}><QuestionCard q={q} index={qi} k={k} a={answers[k] ?? EMPTY} readOnly={readOnly}
+                            onChange={change} onFlush={flush} /></li>
+                        );
+                      })}
+                    </ol>
+                    {!readOnly && iid && s.kind !== "detalle" && (
+                      <ProcessesCard clientId={clientId} interviewId={iid} defaultAreaId={interview?.area_id ?? null}
+                        linked={linked} available={available} areas={areas} openByDefault={false} />
+                    )}
+                  </>
                 )}
               </>
             );
@@ -389,23 +517,120 @@ export function InterviewLive(props: InterviewLiveProps) {
       <div className="print-only space-y-5">
         <h2 className="text-xl font-semibold">{guide.titulo}</h2>
         {interviews.find((i) => i.id === iid) && <p className="text-sm">{interviews.find((i) => i.id === iid)!.label}</p>}
-        {guide.secciones.map((s, si) => (
-          <section key={si} className="break-inside-avoid-page space-y-2">
-            <h3 className="font-semibold">{s.titulo}</h3>
-            <ol className="space-y-2 text-sm">
-              {s.preguntas.map((q, qi) => {
-                const a = answers[keyOf(si, qi)];
-                return (
-                  <li key={qi} className="break-inside-avoid">
-                    <p className="font-medium">{qi + 1}. {q.texto}</p>
-                    <p className="whitespace-pre-wrap pl-4">{a?.no_aplica ? "No aplica / no se habló" : a?.respuesta?.trim() || "—"}</p>
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
+        {guide.secciones.map((s, si) => {
+          const answerText = (q: GuideQuestion, k: string) => {
+            const a = answers[k];
+            if (q.control === "check") return checks.has(k) ? "☑ Hecho" : "☐ Pendiente";
+            if (q.control === "sino") return a?.respuesta === "si" ? "Sí" : a?.respuesta === "no" ? "No" : "—";
+            if (q.control === "check_nota") return `${checks.has(k) ? "☑" : "☐"} ${a?.respuesta?.trim() ?? ""}`;
+            return a?.no_aplica ? "No aplica / no se habló" : a?.respuesta?.trim() || "—";
+          };
+          const targets: (InterviewTask | undefined)[] = s.kind === "detalle" && starred.length ? starred : [undefined];
+          return (
+            <section key={si} className="break-inside-avoid-page space-y-2">
+              <h3 className="font-semibold">{s.titulo}</h3>
+              {s.kind === "inventario" ? (
+                tasks.length === 0 ? <p className="text-sm">—</p> : (
+                  <table className="w-full border-collapse text-sm">
+                    <thead><tr className="text-left"><th>Tarea</th><th>Frecuencia</th><th>Quién</th><th>Pesa</th><th>Molesta</th><th>Detallar</th></tr></thead>
+                    <tbody>
+                      {tasks.map((t) => (
+                        <tr key={t.process_id} className="border-t align-top">
+                          <td>{t.nombre}{t.nota ? ` — ${t.nota}` : ""}</td><td>{t.frecuencia ? FREQ[t.frecuencia] : "—"}</td>
+                          <td>{t.quien_hace ?? "—"}</td><td>{t.pesa_tiempo ? "Sí" : ""}</td><td>{t.molesta_errores ? "Sí" : ""}</td><td>{t.para_detalle ? "⭐" : ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              ) : targets.map((tg) => (
+                <div key={tg?.process_id ?? "general"} className="space-y-2">
+                  {tg && <p className="text-sm font-medium underline">Tarea: {tg.nombre}</p>}
+                  <ol className="space-y-2 text-sm">
+                    {s.preguntas.map((q, qi) => (
+                      <li key={qi} className="break-inside-avoid">
+                        <p className="font-medium">{qi + 1}. {q.texto}</p>
+                        <p className="whitespace-pre-wrap pl-4">{answerText(q, keyOf(si, qi, tg?.process_id))}</p>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ))}
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function QuestionCard({ q, index, k, a, readOnly, onChange, onFlush }: {
+  q: GuideQuestion; index: number; k: string; a: LiveAnswer; readOnly: boolean;
+  onChange: (key: string, patch: Partial<LiveAnswer>) => void; onFlush: (key: string) => void;
+}) {
+  const done = !!a && (a.no_aplica || a.respuesta.trim() !== "");
+  return (
+    <div className={cn("rounded-xl border bg-card p-4 transition-colors", done && "border-primary/40")}>
+      <div className="flex gap-3">
+        <span className={cn("mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border font-mono text-xs", done && "border-primary bg-primary text-primary-foreground")}>
+          {done ? "✓" : index + 1}
+        </span>
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="text-base font-medium leading-snug">{q.texto}</p>
+          {q.sondeo && (
+            <details className="text-sm text-muted-foreground">
+              <summary className="cursor-pointer text-xs hover:text-foreground">Ver sondeo</summary>
+              <p className="mt-1">{q.sondeo}</p>
+            </details>
+          )}
+          {q.campo && <Badge variant="secondary">→ {q.campo}</Badge>}
+          {!readOnly && (
+            <>
+              <Textarea value={a.respuesta} disabled={a.no_aplica} rows={3} aria-label={`Respuesta a: ${q.texto}`}
+                placeholder={a.no_aplica ? "Marcada como «no aplica»" : "Escribe aquí lo que respondió la persona"}
+                onChange={(e) => onChange(k, { respuesta: e.target.value })} onBlur={() => onFlush(k)} />
+              <label className="flex w-fit cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" checked={a.no_aplica} onChange={(e) => onChange(k, { no_aplica: e.target.checked })} />
+                No aplica / no se habló
+              </label>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Ítem de checklist de acuerdos: casilla, Sí/No, o casilla con nota corta. */
+function ControlItem({ q, k, a, checked, readOnly, onChange, onFlush, onToggle }: {
+  q: GuideQuestion; k: string; a: LiveAnswer; checked: boolean; readOnly: boolean;
+  onChange: (key: string, patch: Partial<LiveAnswer>) => void; onFlush: (key: string) => void; onToggle: (key: string, done: boolean) => void;
+}) {
+  if (q.control === "sino") {
+    return (
+      <div className="flex flex-wrap items-center gap-3 rounded-md p-1.5 text-sm">
+        <span className="flex-1">{q.texto}</span>
+        {(["si", "no"] as const).map((v) => (
+          <button key={v} type="button" disabled={readOnly} aria-pressed={a.respuesta === v}
+            onClick={() => onChange(k, { respuesta: a.respuesta === v ? "" : v })}
+            className={cn("min-w-14 rounded-md border px-3 py-1 text-sm transition-colors", a.respuesta === v ? "border-primary bg-primary/15" : "text-muted-foreground hover:bg-muted")}>
+            {v === "si" ? "Sí" : "No"}
+          </button>
         ))}
       </div>
+    );
+  }
+  return (
+    <div className="space-y-1.5 rounded-md p-1.5">
+      <label className={cn("flex cursor-pointer items-start gap-2 text-sm", checked && "text-muted-foreground")}>
+        <input type="checkbox" className="mt-1 size-4" disabled={readOnly} checked={checked} onChange={(e) => onToggle(k, e.target.checked)} />
+        <span>{q.texto}</span>
+      </label>
+      {q.control === "check_nota" && !readOnly && (
+        <input value={a.respuesta} maxLength={500} aria-label="Nota" placeholder="Anota qué no debe quedar registrado (opcional)"
+          onChange={(e) => onChange(k, { respuesta: e.target.value })} onBlur={() => onFlush(k)}
+          className="ml-6 h-8 w-[calc(100%-1.5rem)] rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
+      )}
     </div>
   );
 }

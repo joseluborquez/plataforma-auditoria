@@ -4,10 +4,16 @@ import { GUIDES, POST_PROTOCOL, PRE_CHECKLIST, TIPS } from "@/lib/guide";
 import { requireOwner } from "@/lib/auth";
 import { rows } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import type { Area, Interview, Person, Process } from "@/lib/types";
+import type { Area, Freq, Interview, InterviewTask, Person, Process } from "@/lib/types";
 import { Panel } from "@/components/form";
 import { InterviewLive, type LiveAnswer } from "@/components/interview-live";
 import { cn } from "@/lib/utils";
+
+type LinkRow = {
+  process_id: string; frecuencia: Freq | null; quien_hace: string | null; pesa_tiempo: boolean; molesta_errores: boolean;
+  nota: string | null; para_detalle: boolean;
+  processes: { nombre: string; area_id: string } | { nombre: string; area_id: string }[] | null;
+};
 
 export default async function GuionPage({ params, searchParams }: PageProps<"/clientes/[id]/guion">) {
   const { id } = await params;
@@ -31,20 +37,31 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
   let initialChecks: string[] = [];
   let initialTiming: Record<number, number> = {};
   let linkedIds: string[] = [];
+  let initialTasks: InterviewTask[] = [];
   if (selected) {
     const [answers, checks, timing, links] = await Promise.all([
       supabase.from("interview_answers").select("pregunta_key, respuesta, no_aplica").eq("interview_id", selected.id)
         .then(rows<{ pregunta_key: string; respuesta: string; no_aplica: boolean }>),
       supabase.from("interview_checks").select("item_key").eq("interview_id", selected.id).then(rows<{ item_key: string }>),
       supabase.from("interview_timing").select("seccion, segundos").eq("interview_id", selected.id).then(rows<{ seccion: number; segundos: number }>),
-      supabase.from("interview_processes").select("process_id").eq("interview_id", selected.id).then(rows<{ process_id: string }>),
+      supabase.from("interview_processes")
+        .select("process_id, frecuencia, quien_hace, pesa_tiempo, molesta_errores, nota, para_detalle, processes(nombre, area_id)")
+        .eq("interview_id", selected.id).order("created_at").order("process_id").then(rows<LinkRow>),
     ]);
     initialAnswers = Object.fromEntries(answers.map((a) => [a.pregunta_key, { respuesta: a.respuesta, no_aplica: a.no_aplica }]));
     initialChecks = checks.map((c) => c.item_key);
     initialTiming = Object.fromEntries(timing.map((t) => [t.seccion, t.segundos]));
     linkedIds = links.map((l) => l.process_id);
+    initialTasks = links.map((l) => {
+      const pr = Array.isArray(l.processes) ? l.processes[0] : l.processes;
+      return {
+        process_id: l.process_id, nombre: pr?.nombre ?? "(sin nombre)", area_id: pr?.area_id ?? null, frecuencia: l.frecuencia,
+        quien_hace: l.quien_hace, pesa_tiempo: l.pesa_tiempo, molesta_errores: l.molesta_errores, nota: l.nota, para_detalle: l.para_detalle,
+      };
+    });
   }
-  const opt = (p: Process) => ({ id: p.id, nombre: p.nombre });
+  const opt = (p: Process) => ({ id: p.id, nombre: p.nombre, area_id: p.area_id });
+  const peopleNames = people.filter((p) => !selected?.area_id || p.area_id === selected.area_id).map((p) => p.nombre);
 
   return (
     <div className="space-y-4">
@@ -72,6 +89,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
         interviews={interviews.map((i) => ({ id: i.id, label: label(i) }))}
         interview={selected ? { id: selected.id, estado: selected.estado, area_id: selected.area_id } : null}
         initialAnswers={initialAnswers} initialChecks={initialChecks} initialTiming={initialTiming}
+        initialTasks={initialTasks} peopleNames={peopleNames}
         linked={processes.filter((p) => linkedIds.includes(p.id)).map(opt)}
         available={processes.filter((p) => !linkedIds.includes(p.id)).map(opt)}
         areas={areas.map((a) => ({ id: a.id, nombre: a.nombre }))}

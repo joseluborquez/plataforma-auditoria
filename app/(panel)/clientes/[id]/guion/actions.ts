@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOwner } from "@/lib/auth";
 import { check } from "@/lib/db";
+import type { Freq, InterviewTask } from "@/lib/types";
 
 const uuid = z.string().uuid();
-const keyRe = /^s\d+q\d+$/;
+const keyRe = /^s\d+q\d+(:[0-9a-f-]{36})?$/;
 
 /** Verifica que la entrevista pertenezca al cliente (además de RLS). */
 async function ownInterview(clientId: string, interviewId: string) {
@@ -32,7 +33,7 @@ export async function saveAnswerAction(clientId: string, interviewId: string, ke
 
 export async function toggleCheckAction(clientId: string, interviewId: string, itemKey: string, done: boolean) {
   const { supabase } = await ownInterview(clientId, interviewId);
-  z.string().regex(/^(pre|post):\d+$/).parse(itemKey);
+  z.string().regex(/^((pre|post):\d+|s\d+q\d+)$/).parse(itemKey);
   if (done) check(await supabase.from("interview_checks").upsert({ interview_id: interviewId, item_key: itemKey, done: true }));
   else check(await supabase.from("interview_checks").delete().eq("interview_id", interviewId).eq("item_key", itemKey));
 }
@@ -77,4 +78,66 @@ export async function unlinkProcessFromInterviewAction(clientId: string, intervi
   uuid.parse(processId);
   check(await supabase.from("interview_processes").delete().eq("interview_id", interviewId).eq("process_id", processId));
   revalidatePath(`/clientes/${clientId}`, "layout");
+}
+
+/* ───────── Inventario rápido de tareas ───────── */
+const freqSchema = z.enum(["diaria", "semanal", "mensual", "otra"]);
+const blankToNull = (v: string) => (v === "" ? null : v);
+const taskPatchSchema = z.object({
+  nombre: z.string().trim().min(1, "La tarea necesita un nombre").max(200).optional(),
+  frecuencia: freqSchema.nullable().optional(),
+  quien_hace: z.string().trim().max(200).transform(blankToNull).nullable().optional(),
+  pesa_tiempo: z.boolean().optional(),
+  molesta_errores: z.boolean().optional(),
+  nota: z.string().trim().max(2000).transform(blankToNull).nullable().optional(),
+  para_detalle: z.boolean().optional(),
+}).strict();
+
+/** Crea procesos «Identificado» a partir de las tareas dichas y los vincula a la entrevista. Devuelve las filas creadas. */
+export async function addTasksAction(clientId: string, interviewId: string, areaId: string, nombres: string[], frecuencia: Freq | null): Promise<InterviewTask[]> {
+  const { supabase } = await ownInterview(clientId, interviewId);
+  uuid.parse(areaId);
+  const freq = frecuencia ? freqSchema.parse(frecuencia) : null;
+  const names = nombres.map((n) => n.trim().slice(0, 200)).filter(Boolean).slice(0, 50);
+  if (names.length === 0) throw new Error("Escribe al menos una tarea.");
+  const res = await supabase.from("processes").insert(names.map((nombre) => ({ client_id: clientId, area_id: areaId, nombre }))).select("id, nombre, area_id");
+  check(res);
+  const created = (res.data ?? []) as { id: string; nombre: string; area_id: string }[];
+  check(await supabase.from("interview_processes").upsert(created.map((p) => ({ interview_id: interviewId, process_id: p.id, frecuencia: freq }))));
+  revalidatePath(`/clientes/${clientId}/procesos`);
+  return created.map((p) => ({
+    process_id: p.id, nombre: p.nombre, area_id: p.area_id, frecuencia: freq, quien_hace: null,
+    pesa_tiempo: false, molesta_errores: false, nota: null, para_detalle: false,
+  }));
+}
+
+export async function updateTaskAction(clientId: string, interviewId: string, processId: string, patch: unknown) {
+  const { supabase } = await ownInterview(clientId, interviewId);
+  uuid.parse(processId);
+  const { nombre, ...rest } = taskPatchSchema.parse(patch);
+  if (nombre) check(await supabase.from("processes").update({ nombre }).eq("id", processId).eq("client_id", clientId));
+  if (Object.keys(rest).length) check(await supabase.from("interview_processes").update(rest).eq("interview_id", interviewId).eq("process_id", processId));
+}
+
+/** Quita la tarea de la entrevista. El proceso solo se borra si nadie más lo usa (otra entrevista, mediciones, puntaje, hoja de ruta). */
+export async function removeTaskAction(clientId: string, interviewId: string, processId: string): Promise<{ deleted: boolean }> {
+  const { supabase } = await ownInterview(clientId, interviewId);
+  uuid.parse(processId);
+  const count = async (q: PromiseLike<{ count: number | null; error: { message: string } | null }>) => {
+    const r = await q; check(r); return r.count ?? 0;
+  };
+  const head = { count: "exact" as const, head: true };
+  const [others, meas, scores, roadmap, proc] = await Promise.all([
+    count(supabase.from("interview_processes").select("process_id", head).eq("process_id", processId).neq("interview_id", interviewId)),
+    count(supabase.from("time_measurements").select("id", head).eq("process_id", processId)),
+    count(supabase.from("scores").select("process_id", head).eq("process_id", processId)),
+    count(supabase.from("roadmap_items").select("id", head).eq("process_id", processId)),
+    supabase.from("processes").select("estado_proceso").eq("id", processId).eq("client_id", clientId).maybeSingle(),
+  ]);
+  check(proc);
+  check(await supabase.from("interview_processes").delete().eq("interview_id", interviewId).eq("process_id", processId));
+  const unused = others + meas + scores + roadmap === 0 && (proc.data as { estado_proceso: string } | null)?.estado_proceso === "identificado";
+  if (unused) check(await supabase.from("processes").delete().eq("id", processId).eq("client_id", clientId));
+  revalidatePath(`/clientes/${clientId}/procesos`);
+  return { deleted: unused };
 }
