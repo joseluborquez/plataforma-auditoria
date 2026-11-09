@@ -32,3 +32,15 @@ describe("format", () => {
     expect(isoToSantiagoLocal(iso2)).toBe("2026-01-10T09:00");
   });
 });
+
+describe("formatClock", () => {
+  it("formatea m:ss y h:mm:ss", async () => {
+    const { formatClock } = await import("../lib/format");
+    expect(formatClock(0)).toBe("0:00");
+    expect(formatClock(65)).toBe("1:05");
+    expect(formatClock(3600)).toBe("1:00:00");
+    expect(formatClock(7384)).toBe("2:03:04");
+    expect(formatClock(-5)).toBe("0:00");
+    expect(formatClock(59.9)).toBe("0:59");
+  });
+});

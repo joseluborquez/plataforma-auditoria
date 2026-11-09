@@ -8,7 +8,7 @@ import { readiness as readinessOf } from "@/lib/readiness";
 import type { AreaConditions, ClientTool, Freq, InterviewProblem, InterviewTask, Opt, ProcessFields, ProcessSource, ProcessStep, TaskPatch } from "@/lib/types";
 import {
   addTasksAction, createProcessesFromInterviewAction, updateAreaConditionsAction, finishInterviewAction, linkExistingProcessAction,
-  removeTaskAction, saveAnswerAction, saveTimingAction, toggleCheckAction, unlinkProcessFromInterviewAction, updateTaskAction,
+  removeTaskAction, saveAnswerAction, saveTotalTimeAction, toggleCheckAction, unlinkProcessFromInterviewAction, updateTaskAction,
 } from "@/app/(panel)/clientes/[id]/guion/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,8 @@ import { TaskInventory } from "@/components/task-inventory";
 import { useProblems } from "@/components/use-problems";
 import { useProcessFields } from "@/components/use-process-fields";
 import { useProcessSteps } from "@/components/use-process-steps";
+import { useStopwatch } from "@/components/use-stopwatch";
+import { formatClock } from "@/lib/format";
 import { useReadiness } from "@/components/use-readiness";
 import { useSaveQueue } from "@/components/use-save-queue";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,7 +44,7 @@ export type InterviewLiveProps = {
   interview: { id: string; estado: "pendiente" | "agendada" | "realizada"; area_id: string | null } | null;
   initialAnswers: Record<string, LiveAnswer>;
   initialChecks: string[];
-  initialTiming: Record<number, number>;
+  initialSeconds: number;
   initialTasks: InterviewTask[];
   initialSteps: Record<string, ProcessStep[]>;
   initialFields: Record<string, ProcessFields>;
@@ -60,7 +62,6 @@ export type InterviewLiveProps = {
 const EMPTY: LiveAnswer = { respuesta: "", no_aplica: false };
 /** Clave de una pregunta; en secciones de detalle lleva el id de la tarea. */
 const keyOf = (s: number, q: number, task?: string) => (task ? `s${s}q${q}:${task}` : `s${s}q${q}`);
-const mmss = (t: number) => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 
 export function InterviewLive(props: InterviewLiveProps) {
   const { clientId, tipo, guide, pre, post, tips, interviews, interview, linked, available, areas } = props;
@@ -75,7 +76,6 @@ export function InterviewLive(props: InterviewLiveProps) {
   );
   const [stepIdx, setStepIdx] = useState(0);
   const step = steps[stepIdx];
-  const sectionIdx = step.kind === "section" ? step.index : null;
 
   /* ───────── Respuestas con guardado automático ───────── */
   const [answers, setAnswers] = useState(props.initialAnswers);
@@ -235,32 +235,19 @@ export function InterviewLive(props: InterviewLiveProps) {
   }, [iid, flush, recount]);
 
   /* ───────── Cronómetro por sección ───────── */
-  const [secs, setSecs] = useState(props.initialTiming);
-  const secsRef = useRef(secs);
-  useEffect(() => { secsRef.current = secs; }, [secs]);
-  const [running, setRunning] = useState(false);
-
-  const persistTiming = useCallback((idx: number | null) => {
-    if (idx === null || !iid) return;
-    const v = secsRef.current[idx];
-    if (v) void saveTimingAction(clientId, iid, idx, v).catch(() => {});
-  }, [clientId, iid]);
-
-  useEffect(() => {
-    if (!running || sectionIdx === null) return;
-    const tick = setInterval(() => setSecs((s) => ({ ...s, [sectionIdx]: (s[sectionIdx] ?? 0) + 1 })), 1000);
-    const save = setInterval(() => persistTiming(sectionIdx), 30000);
-    return () => { clearInterval(tick); clearInterval(save); persistTiming(sectionIdx); };
-  }, [running, sectionIdx, persistTiming]);
+  const saveTotal = useCallback((total: number) => (iid ? saveTotalTimeAction(clientId, iid, total) : Promise.resolve()), [clientId, iid]);
+  const stopwatch = useStopwatch(iid, props.initialSeconds, saveTotal);
+  const totalSecs = stopwatch.seconds;
+  const plannedTotal = guide.secciones.reduce((n, x) => n + x.minutos, 0);
 
   /* Guardar todo al salir de la pestaña o cerrar */
   useEffect(() => {
-    const onHide = () => { if (document.visibilityState === "hidden") { void flushAll(); persistTiming(sectionIdx); } };
+    const onHide = () => { if (document.visibilityState === "hidden") void flushAll(); };
     const onUnload = () => { void flushAll(); };
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("beforeunload", onUnload);
     return () => { document.removeEventListener("visibilitychange", onHide); window.removeEventListener("beforeunload", onUnload); };
-  }, [flushAll, persistTiming, sectionIdx]);
+  }, [flushAll]);
 
   /* Atajos: Alt + ← / → */
   useEffect(() => {
@@ -316,7 +303,6 @@ export function InterviewLive(props: InterviewLiveProps) {
   const detailId = detailSel && starred.some((t) => t.process_id === detailSel) ? detailSel : starred[0]?.process_id ?? null;
   const totalQ = sectionStats.reduce((n, s) => n + s.total, 0);
   const totalDone = sectionStats.reduce((n, s) => n + s.done, 0);
-  const totalSecs = Object.values(secs).reduce((n, v) => n + v, 0);
 
   const status = readOnly ? null : failed ? "Sin conexión, reintentando…" : unsaved + stepsApi.pendingCount + fieldsApi.pendingCount + problemsApi.pendingCount + areaPendingN + readinessApi.pendingCount > 0 || inFlight > 0 ? "Guardando…" : "Guardado ✓";
 
@@ -326,11 +312,10 @@ export function InterviewLive(props: InterviewLiveProps) {
   async function finish() {
     if (!iid) return;
     setFinishError(null);
-    setRunning(false);
     try {
       await flushAll();
-      persistTiming(sectionIdx);
-      await finishInterviewAction(clientId, iid, totalSecs >= 60 ? totalSecs / 60 : null);
+      const total = await stopwatch.stop();
+      await finishInterviewAction(clientId, iid, total >= 60 ? total / 60 : null);
       setFinished(true);
       startTransition(() => router.refresh());
     } catch (e) {
@@ -361,7 +346,20 @@ export function InterviewLive(props: InterviewLiveProps) {
             </Badge>
           )}
           <span className="font-mono text-xs text-muted-foreground">{totalDone}/{totalQ} respondidos</span>
-          {!readOnly && <span className="font-mono text-xs text-muted-foreground">⏱ {mmss(totalSecs)} / {guide.secciones.reduce((n, s) => n + s.minutos, 0)} min</span>}
+          {!readOnly && (
+            <span className="flex items-center gap-2">
+              <span className={cn("font-mono text-sm tabular-nums", stopwatch.running ? "text-primary" : "text-muted-foreground", totalSecs > plannedTotal * 60 && "text-destructive")} aria-label="Tiempo de la reunión">
+                {stopwatch.running ? "● " : "⏱ "}{formatClock(totalSecs)}
+              </span>
+              <span className="text-xs text-muted-foreground">/ {plannedTotal} min</span>
+              {stopwatch.running
+                ? <Button size="sm" variant="secondary" onClick={() => void stopwatch.stop()}>Finalizar</Button>
+                : <Button size="sm" onClick={stopwatch.start}>{totalSecs > 0 ? "Reanudar" : "Iniciar"}</Button>}
+              {!stopwatch.running && totalSecs === 0 && Object.keys(answers).length + checks.size + tasks.length > 0 && (
+                <span className="text-xs text-amber-500" role="status">Ya hay datos anotados y el cronómetro no está iniciado</span>
+              )}
+            </span>
+          )}
           <span className="ml-auto flex items-center gap-3">
             {status && <span aria-live="polite" className={cn("text-xs", failed ? "text-destructive" : "text-muted-foreground")}>{status}</span>}
             <Button variant="outline" size="sm" onClick={() => window.print()}>Imprimir / PDF</Button>
@@ -385,7 +383,6 @@ export function InterviewLive(props: InterviewLiveProps) {
             const st = s.kind === "section" ? sectionStats[s.index] : null;
             const complete = st ? st.total > 0 && st.done === st.total : s.kind === "pre" ? pre.every((_, k) => checks.has(`pre:${k}`)) : s.kind === "post" ? post.every((_, k) => checks.has(`post:${k}`)) : false;
             const planned = s.kind === "section" ? guide.secciones[s.index].minutos : 0;
-            const spent = s.kind === "section" ? secs[s.index] ?? 0 : 0;
             return (
               <button key={i} type="button" onClick={() => goTo(i)} aria-current={i === stepIdx ? "step" : undefined}
                 className={cn("flex min-w-44 items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors lg:min-w-0",
@@ -398,7 +395,7 @@ export function InterviewLive(props: InterviewLiveProps) {
                   {st && (
                     <span className="mt-0.5 flex gap-2 font-mono text-[11px] text-muted-foreground">
                       <span>{st.done}/{st.total}</span>
-                      {!readOnly && <span className={cn(spent > planned * 60 && "text-destructive")}>{mmss(spent)}/{planned}m</span>}
+                      <span>{planned} min</span>
                     </span>
                   )}
                 </span>
@@ -422,8 +419,6 @@ export function InterviewLive(props: InterviewLiveProps) {
 
           {step.kind === "section" && (() => {
             const s = guide.secciones[step.index];
-            const planned = s.minutos * 60;
-            const spent = secs[step.index] ?? 0;
             return (
               <>
                 <div className="rounded-xl border bg-card p-4">
@@ -432,17 +427,8 @@ export function InterviewLive(props: InterviewLiveProps) {
                       <h2 className="text-lg font-semibold">{s.titulo}</h2>
                       <p className="text-sm text-muted-foreground">{s.objetivo}</p>
                     </div>
-                    {!readOnly && (
-                      <div className="flex items-center gap-2">
-                        <span className={cn("font-mono text-lg tabular-nums", spent > planned && "text-destructive")}>{mmss(spent)}</span>
-                        <span className="font-mono text-xs text-muted-foreground">/ {s.minutos} min</span>
-                        <Button size="sm" variant={running ? "secondary" : "default"} onClick={() => setRunning((r) => !r)}>
-                          {running ? "Pausar" : spent > 0 ? "Reanudar" : "Iniciar"}
-                        </Button>
-                      </div>
-                    )}
+                    <span className="shrink-0 font-mono text-xs text-muted-foreground">Sugerido: {s.minutos} min</span>
                   </div>
-                  {!readOnly && spent > planned && <p className="mt-2 text-xs text-destructive">Te pasaste {mmss(spent - planned)} del tiempo planificado para esta sección.</p>}
                 </div>
 
                 {s.kind === "checklist" ? (
@@ -676,14 +662,14 @@ export function InterviewLive(props: InterviewLiveProps) {
                         <li key={si} className="flex items-center justify-between gap-2">
                           <button type="button" onClick={() => goTo(si + 1)} className="text-left hover:text-primary">{s.titulo}</button>
                           <span className={cn("font-mono text-xs", st.done < st.total ? "text-destructive" : "text-muted-foreground")}>
-                            {st.done}/{st.total} · {mmss(secs[si] ?? 0)}
+                            {st.done}/{st.total}
                           </span>
                         </li>
                       );
                     })}
                   </ul>
                   <p className="text-sm text-muted-foreground">
-                    Procesos vinculados: <span className="font-mono text-foreground">{linked.length}</span>. Tiempo total medido: <span className="font-mono text-foreground">{mmss(totalSecs)}</span>
+                    Procesos vinculados: <span className="font-mono text-foreground">{linked.length}</span>. Duración de la reunión: <span className="font-mono text-foreground">{formatClock(totalSecs)}</span>
                     {totalSecs >= 60 ? " (se guardará como duración de la entrevista)." : "."}
                     {" "}Problemas registrados: <span className="font-mono text-foreground">{problemsApi.problems.length}</span>
                     {problemsApi.problems.length > 0 && ` (${problemsApi.problems.filter((x) => x.process_id).length} ligados a un proceso${countByType(problemsApi.problems).riesgo_legal ? `, ${countByType(problemsApi.problems).riesgo_legal} de riesgo legal` : ""})`}.

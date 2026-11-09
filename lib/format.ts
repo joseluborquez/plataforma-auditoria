@@ -86,3 +86,11 @@ export function todayISO(): string {
   const p = parts(new Date(), { year: "numeric", month: "2-digit", day: "2-digit" });
   return `${p.year}-${p.month}-${p.day}`;
 }
+
+/** Reloj de cronómetro: m:ss, o h:mm:ss desde la primera hora. */
+export function formatClock(totalSeconds: number): string {
+  const t = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}

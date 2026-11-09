@@ -38,10 +38,12 @@ export async function toggleCheckAction(clientId: string, interviewId: string, i
   else check(await supabase.from("interview_checks").delete().eq("interview_id", interviewId).eq("item_key", itemKey));
 }
 
-export async function saveTimingAction(clientId: string, interviewId: string, seccion: number, segundos: number) {
+/** Guarda el tiempo total de la reunión (cronómetro general). Reemplaza los tiempos por sección que hubiera de antes. */
+export async function saveTotalTimeAction(clientId: string, interviewId: string, segundos: number) {
   const { supabase } = await ownInterview(clientId, interviewId);
-  const s = z.object({ seccion: z.number().int().min(0).max(50), segundos: z.number().int().min(0).max(86400) }).parse({ seccion, segundos });
-  check(await supabase.from("interview_timing").upsert({ interview_id: interviewId, seccion: s.seccion, segundos: s.segundos }));
+  const total = z.number().int().min(0).max(86400).parse(Math.round(segundos));
+  check(await supabase.from("interview_timing").upsert({ interview_id: interviewId, seccion: 0, segundos: total }));
+  check(await supabase.from("interview_timing").delete().eq("interview_id", interviewId).neq("seccion", 0));
 }
 
 /** Marca la entrevista como realizada; si hay tiempo medido, lo guarda como duración. */

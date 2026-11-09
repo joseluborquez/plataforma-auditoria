@@ -38,7 +38,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
 
   let initialAnswers: Record<string, LiveAnswer> = {};
   let initialChecks: string[] = [];
-  let initialTiming: Record<number, number> = {};
+  let initialSeconds = 0;
   let linkedIds: string[] = [];
   let initialTasks: InterviewTask[] = [];
   const initialSteps: Record<string, ProcessStep[]> = {};
@@ -57,7 +57,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
     ]);
     initialAnswers = Object.fromEntries(answers.map((a) => [a.pregunta_key, { respuesta: a.respuesta, no_aplica: a.no_aplica }]));
     initialChecks = checks.map((c) => c.item_key);
-    initialTiming = Object.fromEntries(timing.map((t) => [t.seccion, t.segundos]));
+    initialSeconds = timing.reduce((n, t) => n + t.segundos, 0);
     initialProblems = await supabase.from("interview_problems").select("*").eq("interview_id", selected.id).order("created_at").then(rows<InterviewProblem>);
     linkedIds = links.map((l) => l.process_id);
     if (linkedIds.length) {
@@ -120,7 +120,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
         pre={PRE_CHECKLIST} post={POST_PROTOCOL} tips={TIPS}
         interviews={interviews.map((i) => ({ id: i.id, label: label(i) }))}
         interview={selected ? { id: selected.id, estado: selected.estado, area_id: selected.area_id } : null}
-        initialAnswers={initialAnswers} initialChecks={initialChecks} initialTiming={initialTiming}
+        initialAnswers={initialAnswers} initialChecks={initialChecks} initialSeconds={initialSeconds}
         initialTasks={initialTasks} initialSteps={initialSteps} initialFields={initialFields} measuredIds={measuredIds} initialProblems={initialProblems} initialSources={initialSources} initialTools={initialTools}
         initialArea={{ restricciones: selected?.restricciones ?? [], aprueba: selected?.aprueba ?? null }} sipocSuggestions={sipocSuggestions} peopleNames={peopleNames}
         linked={processes.filter((p) => linkedIds.includes(p.id)).map(opt)}
