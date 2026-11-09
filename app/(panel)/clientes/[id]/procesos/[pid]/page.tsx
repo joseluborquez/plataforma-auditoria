@@ -2,14 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireOwner } from "@/lib/auth";
 import { one, rows } from "@/lib/db";
-import { CRITERIA, DECISION, PROBLEM_TYPE, INTERVIEW_TYPE, PROCESS_STAGE } from "@/lib/labels";
+import { CRITERIA, DECISION, PHASE, PROBLEM_TYPE, RM_STATUS, INTERVIEW_TYPE, PROCESS_STAGE } from "@/lib/labels";
 import { EFFORT_RUBRIC, RUBRIC } from "@/lib/rubric";
 import { suggestStage } from "@/lib/stage";
 import { formatDateTime } from "@/lib/format";
 import { quadrantOf, QUADRANT_LABEL, suggestDecision, IMPACT_MAX } from "@/lib/scoring";
 import { conditionHints, scoreHints } from "@/lib/problems";
 import { normalizeEjemplos, topValues } from "@/lib/process-sheet";
-import type { Area, ClientTool, Freq, Interview, InterviewProblem, Person, Process, ProcessSource, ProcessStep, Score } from "@/lib/types";
+import { draftRoadmapItem } from "@/lib/roadmap-draft";
+import { createRoadmapFromProcessAction } from "../../hoja-de-ruta/actions";
+import type { Area, ClientTool, Freq, Interview, InterviewProblem, Person, Phase, Process, ProcessSource, ProcessStep, RmStatus, Score } from "@/lib/types";
 import { ProcessSheetStandalone } from "@/components/process-sheet-standalone";
 import { ScoreForm } from "@/components/score-form";
 import { suggestScores } from "@/lib/score-suggest";
@@ -23,7 +25,7 @@ import { deleteProcessAction, linkInterviewAction, saveScoreAction, updateProces
 export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/procesos/[pid]">) {
   const { id, pid } = await params;
   const { supabase } = await requireOwner();
-  const [p, areas, score, interviews, people, links, meas, steps, allProcs, problems, lastMeas, sources, clientTools] = await Promise.all([
+  const [p, areas, score, interviews, people, links, meas, steps, allProcs, problems, lastMeas, sources, clientTools, roadmap] = await Promise.all([
 
     supabase.from("processes").select("*").eq("id", pid).eq("client_id", id).maybeSingle().then(one<Process>),
     supabase.from("areas").select("*").eq("client_id", id).order("nombre").then(rows<Area>),
@@ -40,6 +42,7 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
       .order("fecha", { ascending: false }).limit(1).then(rows<{ minutos_por_vez: number; veces_por_semana: number; personas: number }>),
     supabase.from("process_sources").select("*").eq("process_id", pid).order("orden").then(rows<ProcessSource>),
     supabase.from("client_tools").select("nombre, acceso, administra").eq("client_id", id).order("nombre").then(rows<ClientTool>),
+    supabase.from("roadmap_items").select("id, titulo, fase, estado").eq("process_id", pid).then(rows<{ id: string; titulo: string; fase: Phase; estado: RmStatus }>),
   ]);
   if (!p) notFound();
   const sip = p.sipoc ?? { proveedores: [], entradas: [], proceso: [], salidas: [], clientes: [] };
@@ -174,6 +177,35 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
         <ScoreForm action={saveScoreAction.bind(null, id, pid)} score={score} suggestions={suggestions} criteria={CRITERIA}
           decisionOptions={opts(DECISION).map((o) => ({ value: o.value, label: o.label }))} />
         <p className="mt-3 text-xs text-muted-foreground">Impacto = suma de los seis criterios (6 a 30). 1 = poco favorable a automatizar, 5 = muy favorable.</p>
+      </Panel>
+
+      <Panel title="Hoja de ruta">
+        {roadmap.length > 0 ? (
+          <ul className="space-y-1 text-sm">
+            {roadmap.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-2">
+                <Link href={`/clientes/${id}/hoja-de-ruta`} className="hover:text-primary">{r.titulo}</Link>
+                <Badge variant="secondary">{PHASE[r.fase]}</Badge><Badge variant="outline">{RM_STATUS[r.estado]}</Badge>
+              </li>
+            ))}
+          </ul>
+        ) : !score ? (
+          <p className="text-sm text-muted-foreground">Puntúa el proceso para poder crear su ítem en la hoja de ruta.</p>
+        ) : score.decision === "no_tocar" ? (
+          <p className="text-sm text-muted-foreground">La decisión de este proceso es «no tocar»: no se propone un ítem.</p>
+        ) : (() => {
+          const d = draftRoadmapItem({
+            nombre: p.nombre, impacto: score.impacto, esfuerzo: score.esfuerzo, decision: score.decision,
+            prioridadEntrevista: links.flatMap((l) => (l.prioridad ? [l.prioridad] : [])).sort((a, b) => a - b)[0] ?? null,
+          });
+          return (
+            <form action={createRoadmapFromProcessAction.bind(null, id, pid)} className="space-y-3">
+              <p className="text-sm">Se creará: <b>{d.titulo}</b> · {PHASE[d.fase]} · prioridad {d.prioridad} · esfuerzo {d.esfuerzo_estimado.toLowerCase()}.
+                <span className="text-muted-foreground"> Después lo ajustas en la hoja de ruta.</span></p>
+              <SubmitButton>Crear ítem en la hoja de ruta</SubmitButton>
+            </form>
+          );
+        })()}
       </Panel>
 
       <ConfirmDelete action={deleteProcessAction.bind(null, id, pid)} label="Eliminar proceso" what={p.nombre} />

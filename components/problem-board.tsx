@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { PROBLEM_TYPE } from "@/lib/labels";
-import { countByType, PROBLEM_TYPES } from "@/lib/problems";
+import { appendLine, countByType, hasLine, mentionsPerson, PROBLEM_TYPES, removeLine } from "@/lib/problems";
 import type { InterviewProblem, Opt, ProblemPatch, ProblemType, ProcessStep } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,9 +28,10 @@ function Chip({ on, onClick, label, children }: { on: boolean; onClick: () => vo
 }
 
 /** Lista rápida de problemas y riesgos; cada uno se liga a un proceso (y a un paso del mapa) o queda como hallazgo del área. */
-export function ProblemBoard({ problems, api, processes, stepsOf, onMarkStep }: {
+export function ProblemBoard({ problems, api, processes, stepsOf, onMarkStep, peopleNames, reportText, onReport }: {
   problems: InterviewProblem[]; api: ProblemsApi; processes: Opt[]; stepsOf: (processId: string) => ProcessStep[];
   onMarkStep: (processId: string, stepId: string) => void;
+  peopleNames: string[]; reportText: (processId: string) => string | null; onReport: (processId: string, text: string | null) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [tipo, setTipo] = useState<ProblemType>("error");
@@ -132,6 +133,30 @@ export function ProblemBoard({ problems, api, processes, stepsOf, onMarkStep }: 
                     : <Button size="xs" variant="outline" onClick={() => onMarkStep(p.process_id!, step.id)}>Marcar ⚠ en el mapa</Button>)}
                   <span className="ml-auto"><Chip on={noteOpen} label="Nota" onClick={() => setOpenNotes((prev) => { const n = new Set(prev); if (n.has(p.id)) n.delete(p.id); else n.add(p.id); return n; })}>📝</Chip></span>
                 </div>
+                {p.process_id && (() => {
+                  const current = reportText(p.process_id);
+                  const included = hasLine(current, p.texto);
+                  const mention = mentionsPerson(p.texto, peopleNames);
+                  const next = appendLine(current, p.texto);
+                  return (
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      {included ? (
+                        <>
+                          <span className="text-muted-foreground">✓ El cliente lo ve en el reporte, en los problemas de este proceso.</span>
+                          <Button size="xs" variant="outline" onClick={() => onReport(p.process_id!, removeLine(current, p.texto))}>Quitar del reporte</Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button size="xs" variant="secondary" disabled={!!mention || next === null}
+                            title="Lo copia a los problemas del proceso, que el cliente ve en el reporte"
+                            onClick={() => next !== null && onReport(p.process_id!, next)}>Incluir en el reporte</Button>
+                          {mention && <span className="text-destructive">Nombra a «{mention}»: reescríbelo sin nombres antes de incluirlo.</span>}
+                          {!mention && next === null && <span className="text-destructive">No cabe: los problemas del proceso ya llegaron al máximo de 2000 caracteres.</span>}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
                 {p.process_id && !processes.some((x) => x.id === p.process_id) && (
                   <p className="text-xs text-muted-foreground">Proceso: {procName[p.process_id] ?? "(ya no está en esta entrevista)"}</p>
                 )}

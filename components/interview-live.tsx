@@ -8,7 +8,7 @@ import { readiness as readinessOf } from "@/lib/readiness";
 import type { AreaConditions, ClientTool, Freq, InterviewProblem, InterviewTask, Opt, ProcessFields, ProcessSource, ProcessStep, TaskPatch } from "@/lib/types";
 import {
   addTasksAction, createProcessesFromInterviewAction, updateAreaConditionsAction, finishInterviewAction, linkExistingProcessAction,
-  removeTaskAction, saveAnswerAction, saveTotalTimeAction, toggleCheckAction, unlinkProcessFromInterviewAction, updateTaskAction,
+  logInterviewHoursAction, removeTaskAction, saveAnswerAction, saveTotalTimeAction, toggleCheckAction, unlinkProcessFromInterviewAction, updateTaskAction,
 } from "@/app/(panel)/clientes/[id]/guion/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -309,6 +309,13 @@ export function InterviewLive(props: InterviewLiveProps) {
   /* ───────── Finalizar ───────── */
   const [finished, setFinished] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
+  const [logHours, setLogHours] = useState(true);
+  const [hoursLogged, setHoursLogged] = useState<number | null>(null);
+  async function logHoursNow(totalSeconds: number) {
+    if (!iid || totalSeconds < 60) return;
+    const r = await logInterviewHoursAction(clientId, iid, totalSeconds);
+    setHoursLogged(r.minutos);
+  }
   async function finish() {
     if (!iid) return;
     setFinishError(null);
@@ -316,6 +323,7 @@ export function InterviewLive(props: InterviewLiveProps) {
       await flushAll();
       const total = await stopwatch.stop();
       await finishInterviewAction(clientId, iid, total >= 60 ? total / 60 : null);
+      if (logHours) await logHoursNow(total);
       setFinished(true);
       startTransition(() => router.refresh());
     } catch (e) {
@@ -492,7 +500,8 @@ export function InterviewLive(props: InterviewLiveProps) {
                       <p className="text-sm text-muted-foreground">Elige una entrevista para registrar los problemas.</p>
                     ) : (
                       <>
-                        <ProblemBoard problems={problemsApi.problems} api={problemsApi} processes={tasks.map((t) => ({ id: t.process_id, nombre: t.nombre }))}
+                        <ProblemBoard problems={problemsApi.problems} api={problemsApi} peopleNames={props.peopleNames}
+                          reportText={(pid) => fieldsApi.fieldsOf(pid).problemas} onReport={(pid, text) => fieldsApi.patch(pid, { problemas: text }, 300)} processes={tasks.map((t) => ({ id: t.process_id, nombre: t.nombre }))}
                           stepsOf={stepsApi.stepsOf} onMarkStep={(pid, sid) => stepsApi.patch(pid, sid, { problema: true })} />
                         {problemsApi.problems.length === 0 && (
                           <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
@@ -689,9 +698,22 @@ export function InterviewLive(props: InterviewLiveProps) {
                       <Link href={`/clientes/${clientId}/procesos`} className="text-sm text-primary hover:underline">Ir a procesos →</Link>
                       <Link href={`/clientes/${clientId}/mediciones`} className="text-sm text-primary hover:underline">Ir a mediciones →</Link>
                       <Button variant="outline" size="sm" onClick={() => void finish()}>Guardar de nuevo</Button>
+                      {hoursLogged !== null ? (
+                        <span className="text-sm text-muted-foreground">✓ Registrado en <Link href={`/clientes/${clientId}/horas`} className="text-primary hover:underline">Horas</Link>: {hoursLogged} min</span>
+                      ) : totalSecs >= 60 && (
+                        <Button variant="secondary" size="sm" onClick={() => void logHoursNow(totalSecs).catch((e: unknown) => setFinishError(e instanceof Error ? e.message : "No se pudo registrar"))}>
+                          Registrar {Math.max(1, Math.round(totalSecs / 60))} min en Horas
+                        </Button>
+                      )}
                     </div>
                   ) : (
-                    <Button onClick={() => void finish()}>Finalizar entrevista</Button>
+                    <div className="space-y-2">
+                      <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                        <input type="checkbox" checked={logHours} onChange={(e) => setLogHours(e.target.checked)} />
+                        Registrar también la duración en Horas (no la tendrás que anotar a mano)
+                      </label>
+                      <Button onClick={() => void finish()}>Finalizar entrevista</Button>
+                    </div>
                   )}
                 </div>
               )}

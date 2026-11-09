@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireOwner } from "@/lib/auth";
 import { check } from "@/lib/db";
+import { isoToSantiagoLocal, todayISO } from "@/lib/format";
 import type { Freq, InterviewTask } from "@/lib/types";
 
 const uuid = z.string().uuid();
@@ -158,4 +159,29 @@ export async function updateAreaConditionsAction(clientId: string, interviewId: 
   }).partial().strict().parse(patch);
   if (Object.keys(p).length === 0) return;
   check(await supabase.from("interviews").update(p).eq("id", interviewId).eq("client_id", clientId));
+}
+
+/** Registra la duración de la reunión en Horas (actividad «entrevista»). Si ya estaba registrada, la actualiza en vez de duplicarla. */
+export async function logInterviewHoursAction(clientId: string, interviewId: string, segundos: number) {
+  const { supabase } = await ownInterview(clientId, interviewId);
+  const minutos = Math.max(1, Math.round(z.number().min(0).max(86400).parse(segundos) / 60));
+  const iv = await supabase.from("interviews").select("tipo, fecha_hora, person_id, area_id").eq("id", interviewId).maybeSingle();
+  check(iv);
+  const row = iv.data as { tipo: string; fecha_hora: string | null; person_id: string | null; area_id: string | null } | null;
+  if (!row) throw new Error("La entrevista no existe");
+  const [person, area] = await Promise.all([
+    row.person_id ? supabase.from("people").select("nombre").eq("id", row.person_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    row.area_id ? supabase.from("areas").select("nombre").eq("id", row.area_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+  ]);
+  check(person); check(area);
+  const fecha = row.fecha_hora ? isoToSantiagoLocal(row.fecha_hora).slice(0, 10) : todayISO();
+  const detalle = [`Entrevista a ${row.tipo === "encargado" ? "encargado" : "trabajador"}`, (person.data as { nombre: string } | null)?.nombre, (area.data as { nombre: string } | null)?.nombre]
+    .filter(Boolean).join(" · ");
+  const found = await supabase.from("time_log").select("id").eq("client_id", clientId).eq("actividad", "entrevista").eq("fecha", fecha).eq("detalle", detalle).maybeSingle();
+  check(found);
+  if (found.data) check(await supabase.from("time_log").update({ minutos }).eq("id", (found.data as { id: string }).id));
+  else check(await supabase.from("time_log").insert({ client_id: clientId, fecha, actividad: "entrevista", minutos, detalle }));
+  revalidatePath(`/clientes/${clientId}/horas`);
+  revalidatePath("/horas");
+  return { minutos, actualizado: !!found.data };
 }
