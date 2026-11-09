@@ -6,7 +6,11 @@ import { EMPTY_FIELDS } from "@/lib/process-sheet";
 import type { FieldsPatch, ProcessFields } from "@/lib/types";
 import { useSaveQueue, type Track } from "@/components/use-save-queue";
 
-const merge = (a: FieldsPatch, b: FieldsPatch): FieldsPatch => ({ ...a, ...b, sipoc: a.sipoc || b.sipoc ? { ...a.sipoc, ...b.sipoc } : undefined });
+const merge = (a: FieldsPatch, b: FieldsPatch): FieldsPatch => ({
+  ...a, ...b,
+  sipoc: a.sipoc || b.sipoc ? { ...a.sipoc, ...b.sipoc } : undefined,
+  ejemplos: a.ejemplos || b.ejemplos ? { ...a.ejemplos, ...b.ejemplos } : undefined,
+});
 
 /** Campos de la ficha rápida (disparador, SIPOC, datos, excepciones, problemas) de varios procesos, con guardado automático. */
 export function useProcessFields(clientId: string, initial: Record<string, ProcessFields>, track: Track) {
@@ -38,8 +42,8 @@ export function useProcessFields(clientId: string, initial: Record<string, Proce
   const patch = useCallback((pid: string, p: FieldsPatch, delay = 0) => {
     setBy((prev) => {
       const cur = prev[pid] ?? EMPTY_FIELDS;
-      const { sipoc, ...rest } = p;
-      return { ...prev, [pid]: { ...cur, ...rest, sipoc: sipoc ? { ...cur.sipoc, ...sipoc } : cur.sipoc } as ProcessFields };
+      const { sipoc, ejemplos, ...rest } = p;
+      return { ...prev, [pid]: { ...cur, ...rest, sipoc: sipoc ? { ...cur.sipoc, ...sipoc } : cur.sipoc, ejemplos: ejemplos ? { ...cur.ejemplos, ...ejemplos } : cur.ejemplos } as ProcessFields };
     });
     pending.current[pid] = merge(pending.current[pid] ?? {}, p);
     recount();

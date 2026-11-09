@@ -1,6 +1,6 @@
 // Lógica pura de la ficha rápida del proceso.
 import { summarize } from "./process-map";
-import type { Freq, ProcessFields, ProcessStep, SipocLists } from "./types";
+import type { Ejemplos, Freq, ProcessFields, ProcessStep, SipocLists } from "./types";
 
 export const DISPARADORES = ["Correo recibido", "Fecha o plazo", "Solicitud verbal", "Falla o incidente", "Llega un documento"];
 /** Etiquetas en lenguaje simple (SIPOC: proveedores, entradas, salidas, clientes), en el orden en que ocurre el proceso. */
@@ -15,7 +15,8 @@ export const SIPOC_LISTS = [
 export const VECES_POR_FRECUENCIA: Record<Freq, number | null> = { diaria: 5, semanal: 1, mensual: 0.25, otra: null };
 
 export const EMPTY_FIELDS: ProcessFields = {
-  disparador: null, estado_datos: null, excepciones: [], problemas: null,
+  disparador: null, estado_datos: null, excepciones: [], problemas: null, casos_por_mes: null,
+  ejemplos: { entrada: "pendiente", salida: "pendiente", error: "pendiente" },
   sipoc: { proveedores: [], entradas: [], salidas: [], clientes: [] },
 };
 
@@ -52,4 +53,10 @@ export function addUnique(list: string[], incoming: string[], max = 30): string[
     if (v && !out.some((x) => x.toLowerCase() === v.toLowerCase()) && out.length < max) out.push(v);
   }
   return out;
+}
+
+/** Completa con «pendiente» lo que falte (filas antiguas o datos incompletos). */
+export function normalizeEjemplos(raw: Partial<Ejemplos> | null | undefined): Ejemplos {
+  const ok = (v: unknown) => (v === "pedido" || v === "recibido" ? v : "pendiente");
+  return { entrada: ok(raw?.entrada), salida: ok(raw?.salida), error: ok(raw?.error) };
 }

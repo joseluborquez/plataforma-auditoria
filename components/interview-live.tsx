@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Guide, GuideQuestion } from "@/lib/guide";
-import type { AreaConditions, Freq, InterviewProblem, InterviewTask, Opt, ProcessFields, ProcessStep, TaskPatch } from "@/lib/types";
+import { readiness as readinessOf } from "@/lib/readiness";
+import type { AreaConditions, ClientTool, Freq, InterviewProblem, InterviewTask, Opt, ProcessFields, ProcessSource, ProcessStep, TaskPatch } from "@/lib/types";
 import {
   addTasksAction, createProcessesFromInterviewAction, updateAreaConditionsAction, finishInterviewAction, linkExistingProcessAction,
   removeTaskAction, saveAnswerAction, saveTimingAction, toggleCheckAction, unlinkProcessFromInterviewAction, updateTaskAction,
@@ -23,6 +24,7 @@ import { TaskInventory } from "@/components/task-inventory";
 import { useProblems } from "@/components/use-problems";
 import { useProcessFields } from "@/components/use-process-fields";
 import { useProcessSteps } from "@/components/use-process-steps";
+import { useReadiness } from "@/components/use-readiness";
 import { useSaveQueue } from "@/components/use-save-queue";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -47,6 +49,8 @@ export type InterviewLiveProps = {
   measuredIds: string[];
   initialProblems: InterviewProblem[];
   initialArea: AreaConditions;
+  initialSources: Record<string, ProcessSource[]>;
+  initialTools: ClientTool[];
   sipocSuggestions: SipocSuggestions;
   peopleNames: string[];
   linked: Opt[]; available: Opt[]; areas: Opt[];
@@ -141,6 +145,8 @@ export function InterviewLive(props: InterviewLiveProps) {
   const fieldsApi = useProcessFields(clientId, props.initialFields, track);
   const [measured, setMeasured] = useState(() => new Set(props.measuredIds));
   const flushSteps = stepsApi.flushAll;
+  const readinessApi = useReadiness(clientId, props.initialSources, props.initialTools, track);
+  const flushReadiness = readinessApi.flushAll;
   const problemsApi = useProblems(clientId, iid, props.initialProblems, track);
   const flushProblems = problemsApi.flushAll;
   const flushFields = fieldsApi.flushAll;
@@ -176,8 +182,9 @@ export function InterviewLive(props: InterviewLiveProps) {
       flushFields(),
       flushProblems(),
       flushArea(),
+      flushReadiness(),
     ]);
-  }, [flush, flushTask, flushSteps, flushFields, flushProblems, flushArea]);
+  }, [flush, flushTask, flushSteps, flushFields, flushProblems, flushArea, flushReadiness]);
 
   const patchTask = useCallback((pid: string, patch: TaskPatch, delay = 0) => {
     if (!iid) return;
@@ -311,7 +318,7 @@ export function InterviewLive(props: InterviewLiveProps) {
   const totalDone = sectionStats.reduce((n, s) => n + s.done, 0);
   const totalSecs = Object.values(secs).reduce((n, v) => n + v, 0);
 
-  const status = readOnly ? null : failed ? "Sin conexión, reintentando…" : unsaved + stepsApi.pendingCount + fieldsApi.pendingCount + problemsApi.pendingCount + areaPendingN > 0 || inFlight > 0 ? "Guardando…" : "Guardado ✓";
+  const status = readOnly ? null : failed ? "Sin conexión, reintentando…" : unsaved + stepsApi.pendingCount + fieldsApi.pendingCount + problemsApi.pendingCount + areaPendingN + readinessApi.pendingCount > 0 || inFlight > 0 ? "Guardando…" : "Guardado ✓";
 
   /* ───────── Finalizar ───────── */
   const [finished, setFinished] = useState(false);
@@ -612,7 +619,8 @@ export function InterviewLive(props: InterviewLiveProps) {
                               sipocSuggestions={props.sipocSuggestions}
                               defaultVeces={task?.frecuencia ? VECES_POR_FRECUENCIA[task.frecuencia] : null}
                               defaultMetodo={tipo === "trabajador" ? "cronometrado" : "declarado"}
-                              measured={measured.has(detailId)} onMeasured={() => setMeasured((prev) => new Set(prev).add(detailId))} />
+                              measured={measured.has(detailId)} onMeasured={() => setMeasured((prev) => new Set(prev).add(detailId))}
+                              sources={readinessApi.sourcesOf(detailId)} clientTools={readinessApi.tools} readinessApi={readinessApi.api} />
                           );
                         })()}
                       </>
@@ -679,7 +687,15 @@ export function InterviewLive(props: InterviewLiveProps) {
                     {totalSecs >= 60 ? " (se guardará como duración de la entrevista)." : "."}
                     {" "}Problemas registrados: <span className="font-mono text-foreground">{problemsApi.problems.length}</span>
                     {problemsApi.problems.length > 0 && ` (${problemsApi.problems.filter((x) => x.process_id).length} ligados a un proceso${countByType(problemsApi.problems).riesgo_legal ? `, ${countByType(problemsApi.problems).riesgo_legal} de riesgo legal` : ""})`}.
-                  </p>
+                  
+                    {starred.length > 0 && (() => {
+                      const ready = starred.filter((t) => readinessOf({
+                        sources: readinessApi.sourcesOf(t.process_id), toolsUsed: summarize(stepsApi.stepsOf(t.process_id)).herramientas,
+                        clientTools: readinessApi.tools, ejemplos: fieldsApi.fieldsOf(t.process_id).ejemplos, casosPorMes: fieldsApi.fieldsOf(t.process_id).casos_por_mes,
+                      }).every((r) => r.done)).length;
+                      return <> Listas para implementar (conocimiento, acceso y ejemplos): <span className="font-mono text-foreground">{ready}/{starred.length}</span>.</>;
+                    })()}
+                    </p>
                   {finishError && <p className="text-sm text-destructive">{finishError}</p>}
                   {finished || interview?.estado === "realizada" ? (
                     <div className="flex flex-wrap items-center gap-3">
@@ -775,6 +791,8 @@ export function InterviewLive(props: InterviewLiveProps) {
                       <p><b>Disparador:</b> {f.disparador ?? "—"} · <b>Datos:</b> {f.estado_datos ? DATA_STATE[f.estado_datos] : "—"} · <b>Tiempo:</b> {formatRange(sm.minutosMin, sm.minutosMax) || "—"}</p>
                       <p><b>Proveedores:</b> {list(f.sipoc.proveedores)} · <b>Entradas:</b> {list(f.sipoc.entradas)} · <b>Salidas:</b> {list(f.sipoc.salidas)} · <b>Clientes:</b> {list(f.sipoc.clientes)}</p>
                       <p><b>Herramientas:</b> {list(sm.herramientas)} · <b>Excepciones:</b> {list(f.excepciones)}</p>
+                      <p>{readinessOf({ sources: readinessApi.sourcesOf(tg.process_id), toolsUsed: sm.herramientas, clientTools: readinessApi.tools, ejemplos: f.ejemplos, casosPorMes: f.casos_por_mes })
+                        .map((r) => `${r.label}: ${r.done ? "listo" : "pendiente"} (${r.detail})`).join(" · ")}{f.casos_por_mes !== null ? ` · Casos por mes: ${f.casos_por_mes}` : ""}</p>
                       {(sm.problemas.length > 0 || f.problemas) && (
                         <p><b>Problemas:</b> {[...sm.problemas.map((p) => `${p.texto}${p.nota ? ` (${p.nota})` : ""}`), f.problemas].filter(Boolean).join("; ")}</p>
                       )}

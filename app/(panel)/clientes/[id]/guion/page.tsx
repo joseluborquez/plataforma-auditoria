@@ -4,8 +4,8 @@ import { GUIDES, POST_PROTOCOL, PRE_CHECKLIST, TIPS } from "@/lib/guide";
 import { requireOwner } from "@/lib/auth";
 import { rows } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import { topValues } from "@/lib/process-sheet";
-import type { Area, Freq, Interview, InterviewProblem, InterviewTask, Person, Process, ProcessFields, ProcessStep } from "@/lib/types";
+import { normalizeEjemplos, topValues } from "@/lib/process-sheet";
+import type { Area, ClientTool, Freq, Interview, InterviewProblem, InterviewTask, Person, Process, ProcessFields, ProcessSource, ProcessStep } from "@/lib/types";
 import { Panel } from "@/components/form";
 import { InterviewLive, type LiveAnswer } from "@/components/interview-live";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
   const tipo = sp.tipo === "trabajador" ? "trabajador" : "encargado";
   const guide = GUIDES[tipo];
 
+  const initialTools = await supabase.from("client_tools").select("nombre, acceso, administra").eq("client_id", id).order("nombre").then(rows<ClientTool>);
   const [interviews, people, areas, processes] = await Promise.all([
     supabase.from("interviews").select("*").eq("client_id", id).eq("tipo", tipo)
       .order("fecha_hora", { ascending: false, nullsFirst: false }).then(rows<Interview>),
@@ -43,6 +44,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
   const initialSteps: Record<string, ProcessStep[]> = {};
   let measuredIds: string[] = [];
   let initialProblems: InterviewProblem[] = [];
+  const initialSources: Record<string, ProcessSource[]> = {};
   if (selected) {
     const [answers, checks, timing, links] = await Promise.all([
       supabase.from("interview_answers").select("pregunta_key, respuesta, no_aplica").eq("interview_id", selected.id)
@@ -63,6 +65,8 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
       for (const st of steps) (initialSteps[st.process_id] ??= []).push(st);
       const meas = await supabase.from("time_measurements").select("process_id").in("process_id", linkedIds).then(rows<{ process_id: string }>);
       measuredIds = [...new Set(meas.map((m) => m.process_id))];
+      const srcs = await supabase.from("process_sources").select("*").in("process_id", linkedIds).order("orden").then(rows<ProcessSource>);
+      for (const sr of srcs) (initialSources[sr.process_id] ??= []).push(sr);
     }
     initialTasks = links.map((l) => {
       const pr = Array.isArray(l.processes) ? l.processes[0] : l.processes;
@@ -77,6 +81,8 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
   for (const p of processes.filter((x) => linkedIds.includes(x.id))) {
     initialFields[p.id] = {
       disparador: p.disparador, estado_datos: p.estado_datos, excepciones: p.excepciones ?? [], problemas: p.problemas,
+      casos_por_mes: p.casos_por_mes === null || p.casos_por_mes === undefined ? null : Number(p.casos_por_mes),
+      ejemplos: normalizeEjemplos(p.ejemplos),
       sipoc: {
         proveedores: p.sipoc?.proveedores ?? [], entradas: p.sipoc?.entradas ?? [], salidas: p.sipoc?.salidas ?? [], clientes: p.sipoc?.clientes ?? [],
       },
@@ -115,7 +121,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
         interviews={interviews.map((i) => ({ id: i.id, label: label(i) }))}
         interview={selected ? { id: selected.id, estado: selected.estado, area_id: selected.area_id } : null}
         initialAnswers={initialAnswers} initialChecks={initialChecks} initialTiming={initialTiming}
-        initialTasks={initialTasks} initialSteps={initialSteps} initialFields={initialFields} measuredIds={measuredIds} initialProblems={initialProblems}
+        initialTasks={initialTasks} initialSteps={initialSteps} initialFields={initialFields} measuredIds={measuredIds} initialProblems={initialProblems} initialSources={initialSources} initialTools={initialTools}
         initialArea={{ restricciones: selected?.restricciones ?? [], aprueba: selected?.aprueba ?? null }} sipocSuggestions={sipocSuggestions} peopleNames={peopleNames}
         linked={processes.filter((p) => linkedIds.includes(p.id)).map(opt)}
         available={processes.filter((p) => !linkedIds.includes(p.id)).map(opt)}

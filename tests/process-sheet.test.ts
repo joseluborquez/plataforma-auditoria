@@ -46,3 +46,11 @@ describe("addUnique", () => {
     expect(addUnique(["a", "b"], ["c", "d"], 3)).toEqual(["a", "b", "c"]);
   });
 });
+
+describe("normalizeEjemplos", () => {
+  it("completa con «pendiente» y descarta valores inválidos", async () => {
+    const { normalizeEjemplos } = await import("../lib/process-sheet");
+    expect(normalizeEjemplos(null)).toEqual({ entrada: "pendiente", salida: "pendiente", error: "pendiente" });
+    expect(normalizeEjemplos({ entrada: "recibido", salida: "xx" as never })).toEqual({ entrada: "recibido", salida: "pendiente", error: "pendiente" });
+  });
+});

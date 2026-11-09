@@ -46,6 +46,11 @@ insert into public.process_steps (process_id, orden, texto, actor, herramienta, 
   ('20000000-0000-0000-0000-0000000000a1', 0, 'PASO PRIVADO', 'ACTOR PRIVADO', 'Excel', 5, 10, true, 'NOTA PASO PRIVADA'),
   ('20000000-0000-0000-0000-0000000000a1', 1, 'Paso en sistema', 'Sistema', null, null, null, false, null),
   ('20000000-0000-0000-0000-0000000000a1', 2, 'Otro paso', 'Otra Persona', null, null, null, false, null);
+insert into public.process_sources (process_id, nombre, formato, ubicacion, vigencia) values
+  ('20000000-0000-0000-0000-0000000000a1', 'FUENTE PRIVADA', 'documento', 'UBICACION PRIVADA', 'al_dia');
+insert into public.client_tools (client_id, nombre, acceso, administra) values
+  ('c0000000-0000-0000-0000-00000000000a', 'HERRAMIENTA PRIVADA', 'api', 'ADMIN PRIVADO');
+update public.processes set casos_por_mes = 120, ejemplos = '{"entrada":"recibido","salida":"pedido","error":"pendiente"}' where id = '20000000-0000-0000-0000-0000000000a1';
 insert into public.time_measurements (process_id, tipo, minutos_por_vez, veces_por_semana, fecha, fuente) values
   ('20000000-0000-0000-0000-0000000000a1', 'linea_base', 60, 1, current_date, 'fuente a1'),
   ('20000000-0000-0000-0000-0000000000a2', 'linea_base', 30, 1, current_date, 'fuente a2'),
@@ -108,6 +113,9 @@ select pg_temp.expect('owner ve las personas reales en la tabla', (select count(
 select pg_temp.expect_denied('rango de pasos inválido rechazado', $q$update public.process_steps set minutos_min = 20, minutos_max = 1$q$);
 select pg_temp.expect('owner ve los problemas y las prioridades', (select count(*) from public.interview_problems) + (select count(*) from public.interview_processes where prioridad = 1 and idea = 'IDEA PRIVADA'), 3);
 select pg_temp.expect_denied('prioridad fuera de rango rechazada', $q$update public.interview_processes set prioridad = 7$q$);
+select pg_temp.expect('owner ve fuentes y herramientas', (select count(*) from public.process_sources where nombre = 'FUENTE PRIVADA') + (select count(*) from public.client_tools where administra = 'ADMIN PRIVADO'), 2);
+select pg_temp.expect_denied('herramienta repetida (sin distinguir mayúsculas) rechazada', $q$insert into public.client_tools (client_id, nombre) values ('c0000000-0000-0000-0000-00000000000a', ' herramienta privada ')$q$);
+select pg_temp.expect_denied('formato de fuente inválido rechazado', $q$update public.process_sources set formato = 'otro_formato'$q$);
 select pg_temp.expect('owner ve interview_answers', (select count(*) from public.interview_answers where respuesta = 'RESPUESTA PRIVADA'), 1);
 select pg_temp.expect('owner ve interview_checks y timing', (select count(*) from public.interview_checks) + (select count(*) from public.interview_timing), 2);
 select pg_temp.expect('owner ve time_log', (select count(*) from public.time_log where client_id = 'c0000000-0000-0000-0000-00000000000a'), 1);
@@ -125,6 +133,11 @@ select pg_temp.expect_denied('vista de pasos sin notas', 'select nota from publi
 select pg_temp.expect('viewer: 0 interview_problems', (select count(*) from public.interview_problems), 0);
 select pg_temp.expect('viewer: 0 interviews (también sus condiciones de área)', (select count(*) from public.interviews), 0);
 select pg_temp.expect_denied('viewer no escribe problemas', $q$insert into public.interview_problems (interview_id, tipo, texto) values ('10000000-0000-0000-0000-0000000000a1', 'otro', 'x')$q$);
+select pg_temp.expect('viewer: 0 process_sources', (select count(*) from public.process_sources), 0);
+select pg_temp.expect('viewer: 0 client_tools', (select count(*) from public.client_tools), 0);
+select pg_temp.expect_denied('viewer no escribe fuentes', $q$insert into public.process_sources (process_id, nombre) values ('20000000-0000-0000-0000-0000000000a1', 'x')$q$);
+select pg_temp.expect_denied('vista sin volumen de casos', 'select casos_por_mes from public.report_processes');
+select pg_temp.expect_denied('vista sin ejemplos', 'select ejemplos from public.report_processes');
 select pg_temp.expect_denied('viewer no escribe pasos', $q$insert into public.process_steps (process_id, orden, texto) values ('20000000-0000-0000-0000-0000000000a1', 1, 'x')$q$);
 select pg_temp.expect('viewer: 0 interview_answers', (select count(*) from public.interview_answers), 0);
 select pg_temp.expect('viewer: 0 interview_checks', (select count(*) from public.interview_checks), 0);
@@ -210,6 +223,8 @@ select pg_temp.expect_denied('anon no lee clients', 'select * from public.client
 select pg_temp.expect_denied('anon no lee vista', 'select * from public.report_processes');
 select pg_temp.expect_denied('anon no lee notas', 'select * from public.interview_notes');
 select pg_temp.expect_denied('anon no lee pasos', 'select * from public.process_steps');
+select pg_temp.expect_denied('anon no lee fuentes', 'select * from public.process_sources');
+select pg_temp.expect_denied('anon no lee herramientas', 'select * from public.client_tools');
 select pg_temp.expect_denied('anon no lee problemas', 'select * from public.interview_problems');
 select pg_temp.expect_denied('anon no lee pasos del reporte', 'select * from public.report_process_steps');
 select pg_temp.expect_denied('anon no lee respuestas', 'select * from public.interview_answers');

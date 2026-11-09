@@ -12,29 +12,35 @@ const uuid = z.string().uuid();
 const blankToNull = (v: string) => (v === "" ? null : v);
 const list = z.array(z.string().trim().min(1).max(100)).max(30).transform((l) => l.filter((x, i) => l.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i));
 
+const exampleState = z.enum(["pendiente", "pedido", "recibido"]);
+
 const fieldsSchema = z.object({
   disparador: z.string().trim().max(200).transform(blankToNull).nullable(),
   estado_datos: z.enum(["estructurados", "dispersos", "en_papel", "inexistentes"]).nullable(),
   excepciones: list,
   problemas: z.string().trim().max(2000).transform(blankToNull).nullable(),
+  casos_por_mes: z.number().min(0).max(1e9).nullable(),
+  ejemplos: z.object({ entrada: exampleState, salida: exampleState, error: exampleState }).partial().strict(),
   sipoc: z.object({ proveedores: list, entradas: list, salidas: list, clientes: list }).partial().strict(),
 }).partial().strict();
 
 async function ownProcess(clientId: string, processId: string) {
   const { supabase } = await requireOwner();
   uuid.parse(processId);
-  const found = await supabase.from("processes").select("id, sipoc").eq("id", processId).eq("client_id", clientId).maybeSingle();
+  const found = await supabase.from("processes").select("id, sipoc, ejemplos").eq("id", processId).eq("client_id", clientId).maybeSingle();
   check(found);
   if (!found.data) throw new Error("El proceso no existe");
-  return { supabase, sipoc: ((found.data as { sipoc: Record<string, string[]> | null }).sipoc ?? {}) as Record<string, string[]> };
+  const row = found.data as { sipoc: Record<string, string[]> | null; ejemplos: Record<string, string> | null };
+  return { supabase, sipoc: (row.sipoc ?? {}) as Record<string, string[]>, ejemplos: row.ejemplos ?? {} };
 }
 
 /** Guarda campos de la ficha rápida. En SIPOC solo reemplaza las listas recibidas; «Proceso» lo calcula el mapa. */
 export async function updateProcessFieldsAction(clientId: string, processId: string, patch: unknown) {
-  const { supabase, sipoc } = await ownProcess(clientId, processId);
-  const { sipoc: sipocPatch, ...rest } = fieldsSchema.parse(patch);
+  const { supabase, sipoc, ejemplos } = await ownProcess(clientId, processId);
+  const { sipoc: sipocPatch, ejemplos: ejemplosPatch, ...rest } = fieldsSchema.parse(patch);
   const update: Record<string, unknown> = { ...rest };
   if (sipocPatch && Object.keys(sipocPatch).length) update.sipoc = { ...sipoc, ...sipocPatch };
+  if (ejemplosPatch && Object.keys(ejemplosPatch).length) update.ejemplos = { ...ejemplos, ...ejemplosPatch };
   if (Object.keys(update).length === 0) return;
   check(await supabase.from("processes").update(update).eq("id", processId).eq("client_id", clientId));
 }

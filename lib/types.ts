@@ -36,9 +36,10 @@ export type Process = {
   id: string; client_id: string; area_id: string; nombre: string; responsable: string | null;
   disparador: string | null; pasos: string[]; herramientas: string[]; problemas: string | null;
   estado_datos: DataState | null; sipoc: Sipoc; evidencia: string | null; estado_proceso: ProcessStage; excepciones: string[];
+  casos_por_mes: number | null; ejemplos: Ejemplos;
 };
 /** Lo que ve el viewer: sin responsable ni evidencia. */
-export type ReportProcess = Omit<Process, "responsable" | "evidencia" | "estado_proceso" | "excepciones">;
+export type ReportProcess = Omit<Process, "responsable" | "evidencia" | "estado_proceso" | "excepciones" | "casos_por_mes" | "ejemplos">;
 export type Measurement = {
   id: string; process_id: string; tipo: MeasKind; minutos_por_vez: number;
   veces_por_semana: number; personas: number; fecha: string; fuente?: string | null;
@@ -88,8 +89,9 @@ export type StepPatch = Partial<Omit<ProcessStep, "id" | "process_id">>;
 export type SipocLists = { proveedores: string[]; entradas: string[]; salidas: string[]; clientes: string[] };
 export type ProcessFields = {
   disparador: string | null; estado_datos: DataState | null; excepciones: string[]; problemas: string | null; sipoc: SipocLists;
+  casos_por_mes: number | null; ejemplos: Ejemplos;
 };
-export type FieldsPatch = Partial<Omit<ProcessFields, "sipoc">> & { sipoc?: Partial<SipocLists> };
+export type FieldsPatch = Partial<Omit<ProcessFields, "sipoc" | "ejemplos">> & { sipoc?: Partial<SipocLists>; ejemplos?: Partial<Ejemplos> };
 
 export type ProblemType = "error" | "dependencia" | "riesgo_legal" | "espera" | "otro";
 /** Problema o riesgo dicho en una entrevista. process_id null = hallazgo general del área. Solo dueño. */
@@ -98,3 +100,15 @@ export type InterviewProblem = {
   tipo: ProblemType; texto: string; nota: string | null;
 };
 export type ProblemPatch = Partial<Pick<InterviewProblem, "process_id" | "step_id" | "tipo" | "texto" | "nota">>;
+
+/** Preparación para implementar: de dónde sale el conocimiento, a qué herramientas se puede acceder y qué ejemplos hay. */
+export type SourceFormat = "documento" | "planilla" | "correo" | "sistema" | "papel" | "tacito";
+export type Vigencia = "al_dia" | "desactualizado" | "no_se";
+export type ProcessSource = {
+  id: string; process_id: string; orden: number; nombre: string; formato: SourceFormat; ubicacion: string | null; vigencia: Vigencia;
+};
+export type SourcePatch = Partial<Pick<ProcessSource, "nombre" | "formato" | "ubicacion" | "vigencia" | "orden">>;
+export type ToolAccess = "api" | "exporta" | "manual" | "no_se";
+export type ClientTool = { nombre: string; acceso: ToolAccess; administra: string | null };
+export type ExampleState = "pendiente" | "pedido" | "recibido";
+export type Ejemplos = { entrada: ExampleState; salida: ExampleState; error: ExampleState };

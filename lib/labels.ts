@@ -42,3 +42,12 @@ export const STEP_TYPE: Record<"accion" | "decision" | "espera" | "sistema", str
 export const PROBLEM_TYPE: Record<"error" | "dependencia" | "riesgo_legal" | "espera" | "otro", string> = {
   error: "Error o retrabajo", dependencia: "Depende de una persona", riesgo_legal: "Riesgo legal", espera: "Espera de otros", otro: "Otro",
 };
+
+export const SOURCE_FORMAT: Record<"documento" | "planilla" | "correo" | "sistema" | "papel" | "tacito", string> = {
+  documento: "Documento (PDF, Word)", planilla: "Planilla", correo: "Correos", sistema: "Sistema o web", papel: "Papel", tacito: "Solo en la cabeza de alguien",
+};
+export const VIGENCIA: Record<"al_dia" | "desactualizado" | "no_se", string> = { al_dia: "Al día", desactualizado: "Desactualizado", no_se: "No sé" };
+export const TOOL_ACCESS: Record<"api" | "exporta" | "manual" | "no_se", string> = {
+  api: "Tiene API o integraciones", exporta: "Se puede exportar (Excel, CSV)", manual: "Solo manual", no_se: "No sé",
+};
+export const EXAMPLE_STATE: Record<"pendiente" | "pedido" | "recibido", string> = { pendiente: "Por pedir", pedido: "Pedido", recibido: "Recibido" };

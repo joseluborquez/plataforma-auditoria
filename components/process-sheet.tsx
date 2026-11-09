@@ -6,9 +6,12 @@ import { saveStepsMeasurementAction } from "@/app/(panel)/clientes/[id]/procesos
 import { DATA_STATE, MEAS_METHOD } from "@/lib/labels";
 import { formatRange, summarize, timePatch } from "@/lib/process-map";
 import { DISPARADORES, SIPOC_LISTS, sheetChecks } from "@/lib/process-sheet";
-import type { DataState, FieldsPatch, ProcessFields, ProcessStep, SipocLists } from "@/lib/types";
+import { readiness } from "@/lib/readiness";
+import type { ClientTool, DataState, FieldsPatch, ProcessFields, ProcessSource, ProcessStep, SipocLists } from "@/lib/types";
 import { ChipList } from "@/components/chip-list";
 import { ProcessMap, type StepsApi } from "@/components/process-map";
+import { ReadinessBlock } from "@/components/readiness-block";
+import type { ReadinessApi } from "@/components/use-readiness";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,13 +38,15 @@ function Pick({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 }
 
 /** Ficha rápida de un proceso: todo con chips y un mapa; lo demás se calcula desde los pasos. */
-export function ProcessSheet({ clientId, processId, name, steps, fields, stepsApi, onFields, actors, tools, sipocSuggestions, defaultVeces, defaultMetodo, measured, onMeasured }: {
+export function ProcessSheet({ clientId, processId, name, steps, fields, stepsApi, onFields, actors, tools, sipocSuggestions, defaultVeces, defaultMetodo, measured, onMeasured, sources, clientTools, readinessApi }: {
   clientId: string; processId: string; name?: string; steps: ProcessStep[]; fields: ProcessFields; stepsApi: StepsApi;
   onFields: (p: FieldsPatch, delay?: number) => void; actors: string[]; tools: string[]; sipocSuggestions: SipocSuggestions;
   defaultVeces: number | null; defaultMetodo: "declarado" | "cronometrado"; measured: boolean; onMeasured: () => void;
+  sources: ProcessSource[]; clientTools: ClientTool[]; readinessApi: ReadinessApi;
 }) {
   const sum = summarize(steps);
   const checks = sheetChecks(steps, fields, measured);
+  const ready = readiness({ sources, toolsUsed: sum.herramientas, clientTools, ejemplos: fields.ejemplos, casosPorMes: fields.casos_por_mes });
   const [veces, setVeces] = useState(defaultVeces !== null ? String(defaultVeces) : "");
   const [personas, setPersonas] = useState(String(Math.max(1, sum.actores.length)));
   const [metodo, setMetodo] = useState<"declarado" | "cronometrado" | "registro_sistema">(defaultMetodo);
@@ -76,6 +81,10 @@ export function ProcessSheet({ clientId, processId, name, steps, fields, stepsAp
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-1.5">
         {checks.map((c) => <Badge key={c.key} variant={c.done ? "default" : "outline"}>{c.done ? "✓" : "○"} {c.label}</Badge>)}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-muted-foreground">Para implementar:</span>
+        {ready.map((r) => <Badge key={r.key} variant={r.done ? "default" : "outline"} title={r.detail}>{r.done ? "✓" : "○"} {r.label}</Badge>)}
       </div>
 
       <Block title="¿Qué hace que el proceso parta?" hint="Disparador">
@@ -207,6 +216,13 @@ export function ProcessSheet({ clientId, processId, name, steps, fields, stepsAp
             onChange={(e) => onFields({ problemas: e.target.value }, 800)} />
         </div>
       </Block>
+
+      <div className="space-y-3">
+        <div><h3 className="text-sm font-medium">Para implementar la solución</h3>
+          <p className="text-xs text-muted-foreground">Lo que hace falta saber si después se construirá una automatización, un RAG o un copiloto con IA.</p></div>
+        <ReadinessBlock clientId={clientId} processId={processId} sources={sources} toolsUsed={sum.herramientas} clientTools={clientTools}
+          fields={{ casos_por_mes: fields.casos_por_mes, ejemplos: fields.ejemplos }} api={readinessApi} onFields={onFields} />
+      </div>
     </div>
   );
 }

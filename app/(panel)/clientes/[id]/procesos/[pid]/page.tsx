@@ -8,8 +8,8 @@ import { suggestStage } from "@/lib/stage";
 import { formatDateTime } from "@/lib/format";
 import { quadrantOf, QUADRANT_LABEL, suggestDecision, IMPACT_MAX } from "@/lib/scoring";
 import { conditionHints, scoreHints } from "@/lib/problems";
-import { topValues } from "@/lib/process-sheet";
-import type { Area, Freq, Interview, InterviewProblem, Person, Process, ProcessStep, Score } from "@/lib/types";
+import { normalizeEjemplos, topValues } from "@/lib/process-sheet";
+import type { Area, ClientTool, Freq, Interview, InterviewProblem, Person, Process, ProcessSource, ProcessStep, Score } from "@/lib/types";
 import { ProcessSheetStandalone } from "@/components/process-sheet-standalone";
 import { ScoreForm } from "@/components/score-form";
 import { suggestScores } from "@/lib/score-suggest";
@@ -23,7 +23,7 @@ import { deleteProcessAction, linkInterviewAction, saveScoreAction, updateProces
 export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/procesos/[pid]">) {
   const { id, pid } = await params;
   const { supabase } = await requireOwner();
-  const [p, areas, score, interviews, people, links, meas, steps, allProcs, problems, lastMeas] = await Promise.all([
+  const [p, areas, score, interviews, people, links, meas, steps, allProcs, problems, lastMeas, sources, clientTools] = await Promise.all([
 
     supabase.from("processes").select("*").eq("id", pid).eq("client_id", id).maybeSingle().then(one<Process>),
     supabase.from("areas").select("*").eq("client_id", id).order("nombre").then(rows<Area>),
@@ -38,6 +38,8 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
     supabase.from("interview_problems").select("*").eq("process_id", pid).order("created_at").then(rows<InterviewProblem>),
     supabase.from("time_measurements").select("minutos_por_vez, veces_por_semana, personas").eq("process_id", pid).eq("tipo", "linea_base")
       .order("fecha", { ascending: false }).limit(1).then(rows<{ minutos_por_vez: number; veces_por_semana: number; personas: number }>),
+    supabase.from("process_sources").select("*").eq("process_id", pid).order("orden").then(rows<ProcessSource>),
+    supabase.from("client_tools").select("nombre, acceso, administra").eq("client_id", id).order("nombre").then(rows<ClientTool>),
   ]);
   if (!p) notFound();
   const sip = p.sipoc ?? { proveedores: [], entradas: [], proceso: [], salidas: [], clientes: [] };
@@ -81,9 +83,11 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Mapa y ficha rápida</h2>
-        <ProcessSheetStandalone clientId={id} processId={pid} name={p.nombre} initialSteps={steps} measured={(meas.count ?? 0) > 0}
+        <ProcessSheetStandalone clientId={id} processId={pid} name={p.nombre} initialSteps={steps} measured={(meas.count ?? 0) > 0} initialSources={sources} initialTools={clientTools}
           initialFields={{
             disparador: p.disparador, estado_datos: p.estado_datos, excepciones: p.excepciones ?? [], problemas: p.problemas,
+            casos_por_mes: p.casos_por_mes === null || p.casos_por_mes === undefined ? null : Number(p.casos_por_mes),
+            ejemplos: normalizeEjemplos(p.ejemplos),
             sipoc: { proveedores: sip.proveedores, entradas: sip.entradas, salidas: sip.salidas, clientes: sip.clientes },
           }}
           actors={[...new Set([...people.filter((x) => x.area_id === p.area_id).map((x) => x.nombre), "Sistema", "Cliente", "Proveedor"])]}

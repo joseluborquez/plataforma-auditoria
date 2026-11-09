@@ -57,6 +57,9 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
           { texto: "¿Dónde viven los datos? ¿Están ordenados, repartidos en varias partes o solo en papel?", campo: "Estado de los datos" },
           { texto: "¿Cuánto demora cada vez? Pida un rango (mínimo y máximo) y el último caso concreto. ¿Cuántas veces por semana y cuántas personas lo hacen?", campo: "Tiempo (medición)", sondeo: "Registrar como “declarado”. Pedir permiso para cronometrar después." },
           { texto: "¿Cuándo hay excepciones? ¿Qué se hace distinto en esos casos?", campo: "Rúbrica: repetitivo y con reglas" },
+          { texto: "¿Qué documentos, manuales o planillas usa para hacerlo? ¿Dónde están y están al día? ¿Hay algo que solo sepa una persona?", campo: "Conocimiento (para implementar)" },
+          { texto: "¿Esas herramientas permiten sacar los datos o conectarse con otros sistemas? ¿Quién las administra?", campo: "Acceso a sistemas (para implementar)" },
+          { texto: "¿Cuántos casos hay al mes? ¿Podría darnos 5 a 10 ejemplos reales (entrada, salida y alguno con error), sin datos personales?", campo: "Ejemplos y volumen (para implementar)" },
         ],
       },
       {
@@ -122,6 +125,7 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
           { texto: "¿Con qué herramientas? ¿Dónde guarda el resultado?", campo: "Herramientas / Estado de los datos" },
           { texto: "¿Cuánto demora cada vez? Con permiso, cronometrar un caso completo.", campo: "Tiempo (medición)", sondeo: "Registrar como “cronometrado”. Anotar mínimo y máximo vistos." },
           { texto: "¿Cuántas veces a la semana lo hace? ¿Quiénes más lo hacen igual?", campo: "Tiempo (medición)" },
+          { texto: "¿Qué documentos o ejemplos podría mostrarnos de este trabajo (un caso normal y uno con problema)?", campo: "Ejemplos (para implementar)" },
         ],
       },
       {
