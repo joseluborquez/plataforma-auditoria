@@ -40,6 +40,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
   let linkedIds: string[] = [];
   let initialTasks: InterviewTask[] = [];
   const initialSteps: Record<string, ProcessStep[]> = {};
+  let measuredIds: string[] = [];
   if (selected) {
     const [answers, checks, timing, links] = await Promise.all([
       supabase.from("interview_answers").select("pregunta_key, respuesta, no_aplica").eq("interview_id", selected.id)
@@ -57,6 +58,8 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
     if (linkedIds.length) {
       const steps = await supabase.from("process_steps").select("*").in("process_id", linkedIds).order("orden").then(rows<ProcessStep>);
       for (const st of steps) (initialSteps[st.process_id] ??= []).push(st);
+      const meas = await supabase.from("time_measurements").select("process_id").in("process_id", linkedIds).then(rows<{ process_id: string }>);
+      measuredIds = [...new Set(meas.map((m) => m.process_id))];
     }
     initialTasks = links.map((l) => {
       const pr = Array.isArray(l.processes) ? l.processes[0] : l.processes;
@@ -108,7 +111,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
         interviews={interviews.map((i) => ({ id: i.id, label: label(i) }))}
         interview={selected ? { id: selected.id, estado: selected.estado, area_id: selected.area_id } : null}
         initialAnswers={initialAnswers} initialChecks={initialChecks} initialTiming={initialTiming}
-        initialTasks={initialTasks} initialSteps={initialSteps} initialFields={initialFields} sipocSuggestions={sipocSuggestions} peopleNames={peopleNames}
+        initialTasks={initialTasks} initialSteps={initialSteps} initialFields={initialFields} measuredIds={measuredIds} sipocSuggestions={sipocSuggestions} peopleNames={peopleNames}
         linked={processes.filter((p) => linkedIds.includes(p.id)).map(opt)}
         available={processes.filter((p) => !linkedIds.includes(p.id)).map(opt)}
         areas={areas.map((a) => ({ id: a.id, nombre: a.nombre }))}

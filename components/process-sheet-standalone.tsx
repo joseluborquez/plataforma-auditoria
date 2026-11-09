@@ -7,10 +7,11 @@ import { useProcessFields } from "@/components/use-process-fields";
 import { useProcessSteps } from "@/components/use-process-steps";
 
 /** La ficha rápida con su propio guardado automático, para usarla fuera del guion (página del proceso). */
-export function ProcessSheetStandalone({ clientId, processId, name, initialSteps, initialFields, actors, tools, sipocSuggestions }: {
+export function ProcessSheetStandalone({ clientId, processId, name, initialSteps, initialFields, actors, tools, sipocSuggestions, measured: measuredInit }: {
   clientId: string; processId: string; name?: string; initialSteps: ProcessStep[]; initialFields: ProcessFields;
-  actors: string[]; tools: string[]; sipocSuggestions: SipocSuggestions;
+  actors: string[]; tools: string[]; sipocSuggestions: SipocSuggestions; measured: boolean;
 }) {
+  const [measured, setMeasured] = useState(measuredInit);
   const [inFlight, setInFlight] = useState(0);
   const [failed, setFailed] = useState(false);
   const track = useCallback(async <T,>(p: Promise<T>) => {
@@ -27,7 +28,7 @@ export function ProcessSheetStandalone({ clientId, processId, name, initialSteps
       </p>
       <ProcessSheet clientId={clientId} processId={processId} name={name} steps={steps.stepsOf(processId)} fields={fields.fieldsOf(processId)}
         stepsApi={steps} onFields={(p, d) => fields.patch(processId, p, d)} actors={actors} tools={tools}
-        sipocSuggestions={sipocSuggestions} defaultVeces={null} defaultMetodo="declarado" />
+        sipocSuggestions={sipocSuggestions} defaultVeces={null} defaultMetodo="declarado" measured={measured} onMeasured={() => setMeasured(true)} />
     </div>
   );
 }

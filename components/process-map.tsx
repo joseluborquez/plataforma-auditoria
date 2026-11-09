@@ -2,7 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { STEP_TYPE } from "@/lib/labels";
-import { summarize } from "@/lib/process-map";
+import { summarize, timePatch } from "@/lib/process-map";
 import type { ProcessStep, StepPatch, StepType } from "@/lib/types";
 import { ProcessDiagram } from "@/components/process-diagram";
 import { Button } from "@/components/ui/button";
@@ -60,12 +60,8 @@ export function ProcessMap({ processId, name, steps, actors, tools, api }: {
     el?.querySelector<HTMLInputElement>("input[data-role=texto]")?.focus({ preventScroll: true });
   }
   function setTime(st: ProcessStep, which: "min" | "max", raw: string) {
-    const v = raw === "" ? null : Math.max(0, Number(raw));
-    if (v !== null && Number.isNaN(v)) return;
-    let min = which === "min" ? v : st.minutos_min;
-    let max = which === "max" ? v : st.minutos_max;
-    if (min !== null && max !== null && min > max) { if (which === "min") max = min; else min = max; }
-    api.patch(processId, st.id, { minutos_min: min, minutos_max: max }, 800);
+    const p = timePatch(st, which, raw);
+    if (p) api.patch(processId, st.id, p, 800);
   }
 
   return (
@@ -126,7 +122,7 @@ export function ProcessMap({ processId, name, steps, actors, tools, api }: {
                     <input list={`${uid}-actors`} value={st.actor ?? ""} maxLength={100} aria-label="Quién" placeholder="¿Quién?" onChange={(e) => api.patch(processId, st.id, { actor: e.target.value }, 800)} className={cn(inputCls, "w-28")} />
                     <input list={`${uid}-tools`} value={st.herramienta ?? ""} maxLength={100} aria-label="Herramienta" placeholder="Herramienta" onChange={(e) => api.patch(processId, st.id, { herramienta: e.target.value }, 800)} className={cn(inputCls, "w-28")} />
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      ⏱
+                      ⏱ Tiempo
                       <input type="number" min={0} step="any" value={st.minutos_min ?? ""} aria-label="Minutos mínimo" placeholder="mín" onChange={(e) => setTime(st, "min", e.target.value)} className={cn(inputCls, "w-14")} />
                       –
                       <input type="number" min={0} step="any" value={st.minutos_max ?? ""} aria-label="Minutos máximo" placeholder="máx" onChange={(e) => setTime(st, "max", e.target.value)} className={cn(inputCls, "w-14")} />

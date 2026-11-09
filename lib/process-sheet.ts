@@ -20,14 +20,14 @@ export const EMPTY_FIELDS: ProcessFields = {
 };
 
 /** Qué falta para considerar «completa» la ficha de un proceso. */
-export function sheetChecks(steps: ProcessStep[], f: ProcessFields) {
+export function sheetChecks(steps: ProcessStep[], f: ProcessFields, hasMeasurement = false) {
   const s = summarize(steps);
   return [
     { key: "disparador", label: "Disparador", done: !!f.disparador?.trim() },
     { key: "pasos", label: "Pasos", done: s.pasos.length > 0 },
     { key: "sipoc", label: "Entradas y salidas", done: f.sipoc.entradas.length > 0 && f.sipoc.salidas.length > 0 },
     { key: "datos", label: "Estado de los datos", done: !!f.estado_datos },
-    { key: "tiempo", label: "Tiempo", done: s.minutosMin !== null },
+    { key: "tiempo", label: "Tiempo", done: s.minutosMin !== null || hasMeasurement },
   ];
 }
 

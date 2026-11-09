@@ -59,7 +59,7 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Mapa y ficha rápida</h2>
-        <ProcessSheetStandalone clientId={id} processId={pid} name={p.nombre} initialSteps={steps}
+        <ProcessSheetStandalone clientId={id} processId={pid} name={p.nombre} initialSteps={steps} measured={(meas.count ?? 0) > 0}
           initialFields={{
             disparador: p.disparador, estado_datos: p.estado_datos, excepciones: p.excepciones ?? [], problemas: p.problemas,
             sipoc: { proveedores: sip.proveedores, entradas: sip.entradas, salidas: sip.salidas, clientes: sip.clientes },

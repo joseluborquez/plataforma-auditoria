@@ -43,6 +43,9 @@ const measSchema = z.object({
   veces_por_semana: z.number().min(0).max(1000),
   personas: z.number().int().min(1).max(1000),
   metodo: z.enum(["declarado", "cronometrado", "registro_sistema"]),
+  // Solo se usa si ningún paso tiene tiempo: el total que dice la persona, sin desglosar por paso.
+  total_min: z.number().min(0).max(100000).nullable().optional(),
+  total_max: z.number().min(0).max(100000).nullable().optional(),
 });
 
 /** Guarda como medición el tiempo total que suman los pasos (mínimo y máximo). */
@@ -52,13 +55,19 @@ export async function saveStepsMeasurementAction(clientId: string, processId: st
   const r = await supabase.from("process_steps").select("*").eq("process_id", processId).order("orden");
   check(r);
   const sum = summarize((r.data ?? []) as ProcessStep[]);
-  if (sum.minutosMin === null || sum.minutosMax === null) throw new Error("Agrega tiempo a al menos un paso.");
-  const porVez = (sum.minutosMin + sum.minutosMax) / 2;
+  let min = sum.minutosMin, max = sum.minutosMax;
+  if (min === null || max === null) {
+    const tm = m.total_min ?? null, tx = m.total_max ?? null;
+    if (tm === null && tx === null) throw new Error("Anota el tiempo de los pasos o escribe el total.");
+    min = tm ?? tx; max = tx ?? tm;
+    if (min! > max!) throw new Error("El mínimo no puede ser mayor que el máximo.");
+  }
+  const porVez = (min! + max!) / 2;
   check(await supabase.from("time_measurements").insert({
     process_id: processId, tipo: "linea_base", minutos_por_vez: porVez, veces_por_semana: m.veces_por_semana, personas: m.personas,
-    fecha: todayISO(), metodo: m.metodo, minutos_min: sum.minutosMin, minutos_max: sum.minutosMax, fuente: "Mapa del proceso",
+    fecha: todayISO(), metodo: m.metodo, minutos_min: min, minutos_max: max, fuente: sum.minutosMin === null ? "Total declarado" : "Mapa del proceso",
   }));
   check(await supabase.from("processes").update({ estado_proceso: "medido" }).eq("id", processId).in("estado_proceso", ["identificado", "documentado"]));
   revalidatePath(`/clientes/${clientId}/mediciones`);
-  return { min: sum.minutosMin, max: sum.minutosMax };
+  return { min: min!, max: max! };
 }

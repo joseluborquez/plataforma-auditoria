@@ -19,6 +19,10 @@ describe("sheetChecks", () => {
     const r = sheetChecks([step({ minutos_min: 5, minutos_max: 8 })], f);
     expect(r.map((c) => c.done)).toEqual([true, true, true, true, true]);
   });
+  it("el tiempo también cuenta si ya hay una medición guardada", () => {
+    expect(sheetChecks([], EMPTY_FIELDS).find((c) => c.key === "tiempo")?.done).toBe(false);
+    expect(sheetChecks([], EMPTY_FIELDS, true).find((c) => c.key === "tiempo")?.done).toBe(true);
+  });
   it("exige entradas Y salidas", () => {
     const f: ProcessFields = { ...EMPTY_FIELDS, sipoc: { proveedores: [], entradas: ["x"], salidas: [], clientes: [] } };
     expect(sheetChecks([], f).find((c) => c.key === "sipoc")?.done).toBe(false);

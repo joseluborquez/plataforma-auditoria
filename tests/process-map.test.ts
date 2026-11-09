@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRange, layoutSteps, summarize, wrap } from "../lib/process-map";
+import { formatRange, layoutSteps, summarize, timePatch, wrap } from "../lib/process-map";
 import type { ProcessStep } from "../lib/types";
 
 const step = (o: Partial<ProcessStep> & { orden: number }): ProcessStep => ({
@@ -71,5 +71,20 @@ describe("summarize", () => {
     const r = summarize([step({ orden: 0 })]);
     expect(r.minutosMin).toBeNull();
     expect(r.minutosMax).toBeNull();
+  });
+});
+
+describe("timePatch", () => {
+  it("fija el valor y deja el otro como estaba", () => {
+    expect(timePatch({ minutos_min: null, minutos_max: 10 }, "min", "5")).toEqual({ minutos_min: 5, minutos_max: 10 });
+  });
+  it("iguala el otro extremo si el rango quedaría al revés", () => {
+    expect(timePatch({ minutos_min: 5, minutos_max: 10 }, "min", "20")).toEqual({ minutos_min: 20, minutos_max: 20 });
+    expect(timePatch({ minutos_min: 5, minutos_max: 10 }, "max", "2")).toEqual({ minutos_min: 2, minutos_max: 2 });
+  });
+  it("vacío borra el valor; inválido se ignora", () => {
+    expect(timePatch({ minutos_min: 5, minutos_max: 10 }, "max", "")).toEqual({ minutos_min: 5, minutos_max: null });
+    expect(timePatch({ minutos_min: 5, minutos_max: 10 }, "max", "abc")).toBeNull();
+    expect(timePatch({ minutos_min: 5, minutos_max: 10 }, "max", "-3")).toBeNull();
   });
 });

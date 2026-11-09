@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { saveStepsMeasurementAction } from "@/app/(panel)/clientes/[id]/procesos/fields-actions";
 import { DATA_STATE, MEAS_METHOD } from "@/lib/labels";
-import { formatRange, summarize } from "@/lib/process-map";
+import { formatRange, summarize, timePatch } from "@/lib/process-map";
 import { DISPARADORES, SIPOC_LISTS, sheetChecks } from "@/lib/process-sheet";
 import type { DataState, FieldsPatch, ProcessFields, ProcessStep, SipocLists } from "@/lib/types";
 import { ChipList } from "@/components/chip-list";
@@ -35,28 +35,40 @@ function Pick({ on, onClick, children }: { on: boolean; onClick: () => void; chi
 }
 
 /** Ficha rápida de un proceso: todo con chips y un mapa; lo demás se calcula desde los pasos. */
-export function ProcessSheet({ clientId, processId, name, steps, fields, stepsApi, onFields, actors, tools, sipocSuggestions, defaultVeces, defaultMetodo }: {
+export function ProcessSheet({ clientId, processId, name, steps, fields, stepsApi, onFields, actors, tools, sipocSuggestions, defaultVeces, defaultMetodo, measured, onMeasured }: {
   clientId: string; processId: string; name?: string; steps: ProcessStep[]; fields: ProcessFields; stepsApi: StepsApi;
   onFields: (p: FieldsPatch, delay?: number) => void; actors: string[]; tools: string[]; sipocSuggestions: SipocSuggestions;
-  defaultVeces: number | null; defaultMetodo: "declarado" | "cronometrado";
+  defaultVeces: number | null; defaultMetodo: "declarado" | "cronometrado"; measured: boolean; onMeasured: () => void;
 }) {
   const sum = summarize(steps);
-  const checks = sheetChecks(steps, fields);
+  const checks = sheetChecks(steps, fields, measured);
   const [veces, setVeces] = useState(defaultVeces !== null ? String(defaultVeces) : "");
   const [personas, setPersonas] = useState(String(Math.max(1, sum.actores.length)));
   const [metodo, setMetodo] = useState<"declarado" | "cronometrado" | "registro_sistema">(defaultMetodo);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
-  const sig = `${sum.minutosMin}-${sum.minutosMax}-${veces}-${personas}-${metodo}`;
+  const [totalMin, setTotalMin] = useState("");
+  const [totalMax, setTotalMax] = useState("");
+  const manual = sum.minutosMin === null;
+  const num = (v: string) => (v.trim() === "" ? null : Number(v));
+  const tMin = num(totalMin), tMax = num(totalMax);
+  const manualOk = (tMin !== null || tMax !== null) && [tMin, tMax].every((x) => x === null || (!Number.isNaN(x) && x >= 0)) && (tMin === null || tMax === null || tMin <= tMax);
+  const effMin = manual ? (tMin ?? tMax) : sum.minutosMin;
+  const effMax = manual ? (tMax ?? tMin) : sum.minutosMax;
+  const sig = `${effMin}-${effMax}-${veces}-${personas}-${metodo}`;
   const vecesNum = Number(veces);
-  const canSave = sum.minutosMin !== null && veces.trim() !== "" && !Number.isNaN(vecesNum) && vecesNum >= 0 && saved !== sig;
+  const canSave = (manual ? manualOk : true) && effMin !== null && veces.trim() !== "" && !Number.isNaN(vecesNum) && vecesNum >= 0 && saved !== sig;
 
   async function saveMeasurement() {
     setSaving(true); setError(null);
     try {
-      await saveStepsMeasurementAction(clientId, processId, { veces_por_semana: vecesNum, personas: Math.max(1, Math.round(Number(personas) || 1)), metodo });
+      await saveStepsMeasurementAction(clientId, processId, {
+        veces_por_semana: vecesNum, personas: Math.max(1, Math.round(Number(personas) || 1)), metodo,
+        total_min: manual ? tMin : null, total_max: manual ? tMax : null,
+      });
       setSaved(sig);
+      onMeasured();
     } catch (e) { setError(e instanceof Error ? e.message : "No se pudo guardar"); } finally { setSaving(false); }
   }
 
@@ -106,36 +118,79 @@ export function ProcessSheet({ clientId, processId, name, steps, fields, stepsAp
         </Block>
       </div>
 
-      <Block title="Tiempo" hint="Suma de los tiempos de cada paso">
-        {sum.minutosMin === null ? (
-          <p className="text-sm text-muted-foreground">Indica el tiempo (mín–máx) en los pasos para calcularlo.</p>
-        ) : (
-          <div className="space-y-3">
+      <Block title="Tiempo" hint="¿Cuánto demora cada vez que se hace?">
+        <div className="space-y-3">
+          {steps.length > 0 ? (
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">Anota cuánto demora cada paso (mínimo y máximo, en minutos). El total se calcula solo.</p>
+              <ul className="space-y-1">
+                {steps.map((st, i) => (
+                  <li key={st.id} className="flex items-center gap-2 text-sm">
+                    <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">{i + 1}.</span>
+                    <span className="min-w-0 flex-1 truncate" title={st.texto}>{st.texto}</span>
+                    <input type="number" min={0} step="any" value={st.minutos_min ?? ""} aria-label={`Minutos mínimo del paso ${i + 1}`} placeholder="mín"
+                      onChange={(e) => { const p = timePatch(st, "min", e.target.value); if (p) stepsApi.patch(processId, st.id, p, 800); }}
+                      className="h-7 w-16 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring" />
+                    <span className="text-muted-foreground">–</span>
+                    <input type="number" min={0} step="any" value={st.minutos_max ?? ""} aria-label={`Minutos máximo del paso ${i + 1}`} placeholder="máx"
+                      onChange={(e) => { const p = timePatch(st, "max", e.target.value); if (p) stepsApi.patch(processId, st.id, p, 800); }}
+                      className="h-7 w-16 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring" />
+                    <span className="w-8 text-xs text-muted-foreground">min</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Agrega los pasos en el mapa de arriba para anotar el tiempo de cada uno, o escribe el total directamente aquí abajo.</p>
+          )}
+
+          {manual ? (
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <p className="text-xs text-muted-foreground">
+                {steps.length > 0 ? "¿No sabes el tiempo por paso? " : ""}Escribe el <b>tiempo total</b> que dice la persona (por ejemplo, «entre 30 y 45 minutos»).
+              </p>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <input type="number" min={0} step="any" value={totalMin} onChange={(e) => setTotalMin(e.target.value)} aria-label="Total mínimo en minutos" placeholder="mín"
+                  className="h-8 w-20 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
+                <span className="text-muted-foreground">–</span>
+                <input type="number" min={0} step="any" value={totalMax} onChange={(e) => setTotalMax(e.target.value)} aria-label="Total máximo en minutos" placeholder="máx"
+                  className="h-8 w-20 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring" />
+                <span className="text-xs text-muted-foreground">minutos en total</span>
+                {(tMin !== null || tMax !== null) && !manualOk && <span className="text-xs text-destructive">Revisa los valores (el mínimo no puede superar al máximo).</span>}
+              </div>
+            </div>
+          ) : (
             <p className="text-sm">
               Cada vez demora <span className="font-mono font-medium">{formatRange(sum.minutosMin, sum.minutosMax)}</span>
               {sum.sinTiempo > 0 && <span className="text-muted-foreground"> ({sum.sinTiempo} paso(s) sin tiempo)</span>}.
             </p>
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="space-y-1 text-xs text-muted-foreground">Veces por semana
-                <input type="number" min={0} step="any" value={veces} onChange={(e) => setVeces(e.target.value)}
-                  className="mt-1 block h-8 w-28 rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring" />
-              </label>
-              <label className="space-y-1 text-xs text-muted-foreground">Personas que lo hacen
-                <input type="number" min={1} step={1} value={personas} onChange={(e) => setPersonas(e.target.value)}
-                  className="mt-1 block h-8 w-28 rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring" />
-              </label>
-              <label className="space-y-1 text-xs text-muted-foreground">Método
-                <select value={metodo} onChange={(e) => setMetodo(e.target.value as typeof metodo)}
-                  className="mt-1 block h-8 rounded-md border border-input bg-transparent px-2 text-sm text-foreground">
-                  {(Object.keys(MEAS_METHOD) as (keyof typeof MEAS_METHOD)[]).map((m) => <option key={m} value={m} className="bg-card">{MEAS_METHOD[m]}</option>)}
-                </select>
-              </label>
-              <Button onClick={() => void saveMeasurement()} disabled={!canSave || saving}>{saving ? "Guardando…" : saved === sig ? "Medición guardada ✓" : "Guardar como medición"}</Button>
+          )}
+
+          {effMin !== null && (
+            <div className="space-y-2 border-t pt-3">
+              <p className="text-xs text-muted-foreground">Para guardarlo como medición indica cada cuánto se hace y quiénes lo hacen.</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="space-y-1 text-xs text-muted-foreground">Veces por semana
+                  <input type="number" min={0} step="any" value={veces} onChange={(e) => setVeces(e.target.value)}
+                    className="mt-1 block h-8 w-28 rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring" />
+                </label>
+                <label className="space-y-1 text-xs text-muted-foreground">Personas que lo hacen
+                  <input type="number" min={1} step={1} value={personas} onChange={(e) => setPersonas(e.target.value)}
+                    className="mt-1 block h-8 w-28 rounded-md border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring" />
+                </label>
+                <label className="space-y-1 text-xs text-muted-foreground">Método
+                  <select value={metodo} onChange={(e) => setMetodo(e.target.value as typeof metodo)}
+                    className="mt-1 block h-8 rounded-md border border-input bg-transparent px-2 text-sm text-foreground">
+                    {(Object.keys(MEAS_METHOD) as (keyof typeof MEAS_METHOD)[]).map((m) => <option key={m} value={m} className="bg-card">{MEAS_METHOD[m]}</option>)}
+                  </select>
+                </label>
+                <Button onClick={() => void saveMeasurement()} disabled={!canSave || saving}>{saving ? "Guardando…" : saved === sig ? "Medición guardada ✓" : "Guardar como medición"}</Button>
+              </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              {saved === sig && <p className="text-xs text-muted-foreground">Quedó en <Link className="text-primary hover:underline" href={`/clientes/${clientId}/mediciones`}>Mediciones</Link> como línea base.</p>}
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            {saved === sig && <p className="text-xs text-muted-foreground">Quedó en <Link className="text-primary hover:underline" href={`/clientes/${clientId}/mediciones`}>Mediciones</Link> como línea base.</p>}
-          </div>
-        )}
+          )}
+        </div>
       </Block>
 
       <Block title="Excepciones y problemas">

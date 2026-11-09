@@ -83,3 +83,14 @@ export function summarize(input: ProcessStep[]) {
     sinTiempo: steps.length - timed.length,
   };
 }
+
+/** Cambio de tiempo de un paso: mantiene coherente el rango (si el mínimo supera al máximo, el otro se iguala). */
+export function timePatch(step: Pick<ProcessStep, "minutos_min" | "minutos_max">, which: "min" | "max", raw: string):
+  { minutos_min: number | null; minutos_max: number | null } | null {
+  const v = raw.trim() === "" ? null : Number(raw);
+  if (v !== null && (Number.isNaN(v) || v < 0)) return null;
+  let min = which === "min" ? v : step.minutos_min;
+  let max = which === "max" ? v : step.minutos_max;
+  if (min !== null && max !== null && min > max) { if (which === "min") max = min; else min = max; }
+  return { minutos_min: min, minutos_max: max };
+}

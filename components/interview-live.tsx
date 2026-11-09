@@ -39,6 +39,7 @@ export type InterviewLiveProps = {
   initialTasks: InterviewTask[];
   initialSteps: Record<string, ProcessStep[]>;
   initialFields: Record<string, ProcessFields>;
+  measuredIds: string[];
   sipocSuggestions: SipocSuggestions;
   peopleNames: string[];
   linked: Opt[]; available: Opt[]; areas: Opt[];
@@ -131,6 +132,7 @@ export function InterviewLive(props: InterviewLiveProps) {
   }, []);
   const stepsApi = useProcessSteps(clientId, props.initialSteps, track);
   const fieldsApi = useProcessFields(clientId, props.initialFields, track);
+  const [measured, setMeasured] = useState(() => new Set(props.measuredIds));
   const flushSteps = stepsApi.flushAll;
   const flushFields = fieldsApi.flushAll;
 
@@ -249,7 +251,7 @@ export function InterviewLive(props: InterviewLiveProps) {
   const sectionStats = guide.secciones.map((s, si) => {
     if (s.kind === "inventario") return { total: tasks.length, done: tasks.filter((t) => t.frecuencia).length };
     if (s.kind === "detalle") {
-      const checksOf = starred.map((t) => sheetChecks(stepsApi.stepsOf(t.process_id), fieldsApi.fieldsOf(t.process_id)));
+      const checksOf = starred.map((t) => sheetChecks(stepsApi.stepsOf(t.process_id), fieldsApi.fieldsOf(t.process_id), measured.has(t.process_id)));
       return { total: checksOf.length * 5, done: checksOf.reduce((n, c) => n + c.filter((x) => x.done).length, 0) };
     }
     const targets: (string | undefined)[] = [undefined];
@@ -459,7 +461,7 @@ export function InterviewLive(props: InterviewLiveProps) {
                         <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3">
                           <span className="text-xs text-muted-foreground">Tarea que se está detallando:</span>
                           {starred.map((t) => {
-                            const dn = sheetChecks(stepsApi.stepsOf(t.process_id), fieldsApi.fieldsOf(t.process_id)).filter((x) => x.done).length;
+                            const dn = sheetChecks(stepsApi.stepsOf(t.process_id), fieldsApi.fieldsOf(t.process_id), measured.has(t.process_id)).filter((x) => x.done).length;
                             return (
                               <button key={t.process_id} type="button" aria-pressed={detailId === t.process_id} onClick={() => setDetailSel(t.process_id)}
                                 className={cn("rounded-md border px-2.5 py-1 text-sm", detailId === t.process_id ? "border-primary bg-accent" : "text-muted-foreground hover:text-foreground")}>
@@ -479,7 +481,8 @@ export function InterviewLive(props: InterviewLiveProps) {
                               tools={[...new Set([...["Excel", "Correo", "WhatsApp", "Papel", "Sistema propio"], ...starred.flatMap((t) => stepsApi.stepsOf(t.process_id).map((x) => x.herramienta ?? ""))].filter(Boolean))]}
                               sipocSuggestions={props.sipocSuggestions}
                               defaultVeces={task?.frecuencia ? VECES_POR_FRECUENCIA[task.frecuencia] : null}
-                              defaultMetodo={tipo === "trabajador" ? "cronometrado" : "declarado"} />
+                              defaultMetodo={tipo === "trabajador" ? "cronometrado" : "declarado"}
+                              measured={measured.has(detailId)} onMeasured={() => setMeasured((prev) => new Set(prev).add(detailId))} />
                           );
                         })()}
                       </>
