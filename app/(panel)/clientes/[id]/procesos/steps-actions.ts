@@ -33,6 +33,21 @@ const patchSchema = z.object({
   nota: stepSchema.shape.nota,
 }).partial().strict();
 
+type Db = Awaited<ReturnType<typeof requireOwner>>["supabase"];
+
+/** Mantiene la ficha al día con los pasos: pasos, herramientas y la columna «Proceso» del SIPOC se calculan solos. */
+async function syncFromSteps(supabase: Db, processId: string) {
+  const r = await supabase.from("process_steps").select("texto, herramienta").eq("process_id", processId).order("orden");
+  check(r);
+  const steps = (r.data ?? []) as { texto: string; herramienta: string | null }[];
+  const pasos = steps.map((x) => x.texto.trim());
+  const herramientas = [...new Set(steps.map((x) => x.herramienta?.trim()).filter((x): x is string => !!x))];
+  const cur = await supabase.from("processes").select("sipoc").eq("id", processId).maybeSingle();
+  check(cur);
+  const sipoc = { ...((cur.data as { sipoc: Record<string, string[]> } | null)?.sipoc ?? {}), proceso: pasos };
+  check(await supabase.from("processes").update({ pasos, herramientas, sipoc }).eq("id", processId));
+}
+
 async function ownProcess(clientId: string, processId: string) {
   const { supabase } = await requireOwner();
   uuid.parse(processId);
@@ -47,6 +62,7 @@ export async function addStepAction(clientId: string, step: unknown) {
   const s = stepSchema.parse(step);
   const supabase = await ownProcess(clientId, s.process_id);
   check(await supabase.from("process_steps").upsert(s, { onConflict: "id", ignoreDuplicates: true }));
+  await syncFromSteps(supabase, s.process_id);
 }
 
 export async function updateStepAction(clientId: string, processId: string, stepId: string, patch: unknown) {
@@ -55,12 +71,14 @@ export async function updateStepAction(clientId: string, processId: string, step
   const p = patchSchema.parse(patch);
   if (Object.keys(p).length === 0) return;
   check(await supabase.from("process_steps").update(p).eq("id", stepId).eq("process_id", processId));
+  if ("texto" in p || "herramienta" in p) await syncFromSteps(supabase, processId);
 }
 
 export async function removeStepAction(clientId: string, processId: string, stepId: string) {
   const supabase = await ownProcess(clientId, processId);
   uuid.parse(stepId);
   check(await supabase.from("process_steps").delete().eq("id", stepId).eq("process_id", processId));
+  await syncFromSteps(supabase, processId);
 }
 
 /** Renumera los pasos según el orden recibido (ids de arriba hacia abajo). */
@@ -69,4 +87,5 @@ export async function reorderStepsAction(clientId: string, processId: string, id
   const list = z.array(uuid).max(200).parse(ids);
   const results = await Promise.all(list.map((id, orden) => supabase.from("process_steps").update({ orden }).eq("id", id).eq("process_id", processId)));
   for (const r of results) check(r);
+  await syncFromSteps(supabase, processId);
 }

@@ -35,10 +35,10 @@ export type Sipoc = {
 export type Process = {
   id: string; client_id: string; area_id: string; nombre: string; responsable: string | null;
   disparador: string | null; pasos: string[]; herramientas: string[]; problemas: string | null;
-  estado_datos: DataState | null; sipoc: Sipoc; evidencia: string | null; estado_proceso: ProcessStage;
+  estado_datos: DataState | null; sipoc: Sipoc; evidencia: string | null; estado_proceso: ProcessStage; excepciones: string[];
 };
 /** Lo que ve el viewer: sin responsable ni evidencia. */
-export type ReportProcess = Omit<Process, "responsable" | "evidencia" | "estado_proceso">;
+export type ReportProcess = Omit<Process, "responsable" | "evidencia" | "estado_proceso" | "excepciones">;
 export type Measurement = {
   id: string; process_id: string; tipo: MeasKind; minutos_por_vez: number;
   veces_por_semana: number; personas: number; fecha: string; fuente?: string | null;
@@ -80,3 +80,10 @@ export type ProcessStep = {
   problema: boolean; nota: string | null;
 };
 export type StepPatch = Partial<Omit<ProcessStep, "id" | "process_id">>;
+
+/** Campos de la ficha rápida que se llenan con chips (el resto se calcula desde los pasos). */
+export type SipocLists = { proveedores: string[]; entradas: string[]; salidas: string[]; clientes: string[] };
+export type ProcessFields = {
+  disparador: string | null; estado_datos: DataState | null; excepciones: string[]; problemas: string | null; sipoc: SipocLists;
+};
+export type FieldsPatch = Partial<Omit<ProcessFields, "sipoc">> & { sipoc?: Partial<SipocLists> };

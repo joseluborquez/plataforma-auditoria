@@ -4,7 +4,8 @@ import { GUIDES, POST_PROTOCOL, PRE_CHECKLIST, TIPS } from "@/lib/guide";
 import { requireOwner } from "@/lib/auth";
 import { rows } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import type { Area, Freq, Interview, InterviewTask, Person, Process, ProcessStep } from "@/lib/types";
+import { topValues } from "@/lib/process-sheet";
+import type { Area, Freq, Interview, InterviewTask, Person, Process, ProcessFields, ProcessStep } from "@/lib/types";
 import { Panel } from "@/components/form";
 import { InterviewLive, type LiveAnswer } from "@/components/interview-live";
 import { cn } from "@/lib/utils";
@@ -65,6 +66,19 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
       };
     });
   }
+  const initialFields: Record<string, ProcessFields> = {};
+  for (const p of processes.filter((x) => linkedIds.includes(x.id))) {
+    initialFields[p.id] = {
+      disparador: p.disparador, estado_datos: p.estado_datos, excepciones: p.excepciones ?? [], problemas: p.problemas,
+      sipoc: {
+        proveedores: p.sipoc?.proveedores ?? [], entradas: p.sipoc?.entradas ?? [], salidas: p.sipoc?.salidas ?? [], clientes: p.sipoc?.clientes ?? [],
+      },
+    };
+  }
+  const sipocSuggestions = {
+    proveedores: topValues(processes.map((p) => p.sipoc?.proveedores ?? [])), entradas: topValues(processes.map((p) => p.sipoc?.entradas ?? [])),
+    salidas: topValues(processes.map((p) => p.sipoc?.salidas ?? [])), clientes: topValues(processes.map((p) => p.sipoc?.clientes ?? [])),
+  };
   const opt = (p: Process) => ({ id: p.id, nombre: p.nombre, area_id: p.area_id });
   const peopleNames = people.filter((p) => !selected?.area_id || p.area_id === selected.area_id).map((p) => p.nombre);
 
@@ -94,7 +108,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
         interviews={interviews.map((i) => ({ id: i.id, label: label(i) }))}
         interview={selected ? { id: selected.id, estado: selected.estado, area_id: selected.area_id } : null}
         initialAnswers={initialAnswers} initialChecks={initialChecks} initialTiming={initialTiming}
-        initialTasks={initialTasks} initialSteps={initialSteps} peopleNames={peopleNames}
+        initialTasks={initialTasks} initialSteps={initialSteps} initialFields={initialFields} sipocSuggestions={sipocSuggestions} peopleNames={peopleNames}
         linked={processes.filter((p) => linkedIds.includes(p.id)).map(opt)}
         available={processes.filter((p) => !linkedIds.includes(p.id)).map(opt)}
         areas={areas.map((a) => ({ id: a.id, nombre: a.nombre }))}

@@ -141,6 +141,7 @@ select pg_temp.expect('viewer no ve confidenciales', (select count(*) from publi
 -- Las vistas no exponen columnas privadas
 select pg_temp.expect_denied('vista sin responsable', 'select responsable from public.report_processes');
 select pg_temp.expect_denied('vista sin evidencia', 'select evidencia from public.report_processes');
+select pg_temp.expect_denied('vista sin excepciones', 'select excepciones from public.report_processes');
 select pg_temp.expect_denied('vista sin fuente', 'select fuente from public.report_measurements');
 select pg_temp.expect_denied('vista sin notas roadmap', 'select notas from public.report_roadmap');
 select pg_temp.expect_denied('vista sin rut', 'select rut from public.report_clients');

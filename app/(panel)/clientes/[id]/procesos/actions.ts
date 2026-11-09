@@ -45,19 +45,26 @@ export async function updateProcessAction(clientId: string, pid: string, fd: For
   const { supabase } = await requireOwner();
   const nombre = z.string().trim().min(1, "El nombre es obligatorio").parse(fd.get("nombre"));
   const area_id = z.string().uuid().parse(fd.get("area_id"));
-  const estado = opt(fd.get("estado_datos"));
-  const estado_datos = estado ? z.enum(["estructurados", "dispersos", "en_papel", "inexistentes"]).parse(estado) : null;
   const estado_proceso = z.enum(["identificado", "documentado", "medido", "puntuado", "validado"]).parse(fd.get("estado_proceso") ?? "identificado");
-  check(await supabase.from("processes").update({
-    nombre, area_id, estado_proceso, responsable: opt(fd.get("responsable")), disparador: opt(fd.get("disparador")),
-    pasos: lines(fd.get("pasos")), herramientas: commas(fd.get("herramientas")),
-    problemas: opt(fd.get("problemas")), estado_datos, evidencia: opt(fd.get("evidencia")),
-    sipoc: {
+  const update: Record<string, unknown> = { nombre, area_id, estado_proceso };
+  // Solo se actualiza lo que el formulario trae: pasos, herramientas, SIPOC y demás se editan en el mapa del proceso.
+  if (fd.has("responsable")) update.responsable = opt(fd.get("responsable"));
+  if (fd.has("evidencia")) update.evidencia = opt(fd.get("evidencia"));
+  if (fd.has("disparador")) update.disparador = opt(fd.get("disparador"));
+  if (fd.has("problemas")) update.problemas = opt(fd.get("problemas"));
+  if (fd.has("pasos")) update.pasos = lines(fd.get("pasos"));
+  if (fd.has("herramientas")) update.herramientas = commas(fd.get("herramientas"));
+  if (fd.has("estado_datos")) {
+    const estado = opt(fd.get("estado_datos"));
+    update.estado_datos = estado ? z.enum(["estructurados", "dispersos", "en_papel", "inexistentes"]).parse(estado) : null;
+  }
+  if (fd.has("sipoc_proveedores")) {
+    update.sipoc = {
       proveedores: lines(fd.get("sipoc_proveedores")), entradas: lines(fd.get("sipoc_entradas")),
-      proceso: lines(fd.get("sipoc_proceso")), salidas: lines(fd.get("sipoc_salidas")),
-      clientes: lines(fd.get("sipoc_clientes")),
-    },
-  }).eq("id", pid));
+      proceso: lines(fd.get("sipoc_proceso")), salidas: lines(fd.get("sipoc_salidas")), clientes: lines(fd.get("sipoc_clientes")),
+    };
+  }
+  check(await supabase.from("processes").update(update).eq("id", pid).eq("client_id", clientId));
   revalidatePath(`/clientes/${clientId}`, "layout");
 }
 

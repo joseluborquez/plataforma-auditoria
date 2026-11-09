@@ -5,8 +5,7 @@ import {
   addStepAction, removeStepAction, reorderStepsAction, updateStepAction,
 } from "@/app/(panel)/clientes/[id]/procesos/steps-actions";
 import type { ProcessStep, StepPatch } from "@/lib/types";
-
-type Track = <T>(p: Promise<T>) => Promise<T>;
+import { useSaveQueue, type Track } from "@/components/use-save-queue";
 const sorted = (l: ProcessStep[]) => [...l].sort((a, b) => a.orden - b.orden);
 
 /** Estado y guardado automático de los pasos de varios procesos. `track` informa el estado de guardado a la barra superior. */
@@ -15,22 +14,9 @@ export function useProcessSteps(clientId: string, initial: Record<string, Proces
   const [pendingCount, setPendingCount] = useState(0);
   const pending = useRef<Record<string, { pid: string; patch: StepPatch }>>({});
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
   const retry = useRef<(stepId: string) => void>(() => {});
+  const { enqueue, drain } = useSaveQueue(track);
   const recount = useCallback(() => setPendingCount(Object.keys(pending.current).length), []);
-
-  /** Las escrituras van en fila y se reintentan: un paso nuevo siempre se guarda antes de editarse. */
-  const enqueue = useCallback((fn: () => Promise<unknown>) => {
-    const run = async () => {
-      let lastError: unknown;
-      for (let i = 0; i < 3; i++) {
-        try { return await track(fn()); } catch (e) { lastError = e; await new Promise((r) => setTimeout(r, 1500 * (i + 1))); }
-      }
-      throw lastError;
-    };
-    queue.current = queue.current.then(run, run);
-    return queue.current.catch(() => {});
-  }, [track]);
 
   const flushStep = useCallback(async (stepId: string) => {
     clearTimeout(timers.current[stepId]);
@@ -44,8 +30,8 @@ export function useProcessSteps(clientId: string, initial: Record<string, Proces
 
   const flushAll = useCallback(async () => {
     await Promise.all(Object.keys(pending.current).map((id) => flushStep(id)));
-    await queue.current.catch(() => {});
-  }, [flushStep]);
+    await drain();
+  }, [flushStep, drain]);
 
   const stepsOf = (pid: string) => sorted(byProcess[pid] ?? []);
 

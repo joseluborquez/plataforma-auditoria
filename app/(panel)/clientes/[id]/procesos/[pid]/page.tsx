@@ -2,28 +2,26 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireOwner } from "@/lib/auth";
 import { one, rows } from "@/lib/db";
-import { CRITERIA, DATA_STATE, DECISION, INTERVIEW_TYPE, PROCESS_STAGE } from "@/lib/labels";
+import { CRITERIA, DECISION, INTERVIEW_TYPE, PROCESS_STAGE } from "@/lib/labels";
 import { EFFORT_RUBRIC, RUBRIC } from "@/lib/rubric";
 import { suggestStage } from "@/lib/stage";
 import { formatDateTime } from "@/lib/format";
 import { quadrantOf, QUADRANT_LABEL, suggestDecision, IMPACT_MAX } from "@/lib/scoring";
-import type { Area, Interview, Person, Process, Score } from "@/lib/types";
+import { topValues } from "@/lib/process-sheet";
+import type { Area, Interview, Person, Process, ProcessStep, Score } from "@/lib/types";
+import { ProcessSheetStandalone } from "@/components/process-sheet-standalone";
 import { Field, Panel, SelectField, TextAreaField, opts } from "@/components/form";
 import { SubmitButton } from "@/components/submit-button";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { Badge } from "@/components/ui/badge";
 import { deleteProcessAction, linkInterviewAction, saveScoreAction, updateProcessAction } from "../actions";
 
-const SIPOC = [
-  ["proveedores", "S · Proveedores"], ["entradas", "I · Entradas"], ["proceso", "P · Proceso"],
-  ["salidas", "O · Salidas"], ["clientes", "C · Clientes"],
-] as const;
 const ONE_TO_FIVE = [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) }));
 
 export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/procesos/[pid]">) {
   const { id, pid } = await params;
   const { supabase } = await requireOwner();
-  const [p, areas, score, interviews, people, links, meas] = await Promise.all([
+  const [p, areas, score, interviews, people, links, meas, steps, allProcs] = await Promise.all([
     supabase.from("processes").select("*").eq("id", pid).eq("client_id", id).maybeSingle().then(one<Process>),
     supabase.from("areas").select("*").eq("client_id", id).order("nombre").then(rows<Area>),
     supabase.from("scores").select("*").eq("process_id", pid).maybeSingle().then(one<Score>),
@@ -31,9 +29,12 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
     supabase.from("people").select("*").eq("client_id", id).then(rows<Person>),
     supabase.from("interview_processes").select("interview_id").eq("process_id", pid).then(rows<{ interview_id: string }>),
     supabase.from("time_measurements").select("id", { count: "exact", head: true }).eq("process_id", pid),
+    supabase.from("process_steps").select("*").eq("process_id", pid).order("orden").then(rows<ProcessStep>),
+    supabase.from("processes").select("sipoc").eq("client_id", id).then(rows<Pick<Process, "sipoc">>),
   ]);
   if (!p) notFound();
   const sip = p.sipoc ?? { proveedores: [], entradas: [], proceso: [], salidas: [], clientes: [] };
+  const sug = (k: "proveedores" | "entradas" | "salidas" | "clientes") => topValues(allProcs.map((x) => x.sipoc?.[k] ?? []));
   const personName = Object.fromEntries(people.map((x) => [x.id, x.nombre]));
   const linked = new Set(links.map((l) => l.interview_id));
   const stageHint = suggestStage(p, (meas.count ?? 0) > 0, !!score);
@@ -48,25 +49,25 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
             <Field label="Nombre" name="nombre" defaultValue={p.nombre} required />
             <SelectField label="Área" name="area_id" required defaultValue={p.area_id} options={areas.map((a) => ({ value: a.id, label: a.nombre }))} />
             <Field label="Responsable (privado)" name="responsable" defaultValue={p.responsable} />
-            <Field label="Disparador" name="disparador" defaultValue={p.disparador} />
-            <TextAreaField label="Pasos (uno por línea)" name="pasos" rows={6} defaultValue={(p.pasos ?? []).join("\n")} />
-            <TextAreaField label="Problemas detectados" name="problemas" rows={6} defaultValue={p.problemas} />
-            <Field label="Herramientas (separadas por coma)" name="herramientas" defaultValue={(p.herramientas ?? []).join(", ")} />
-            <SelectField label="Estado de los datos" name="estado_datos" emptyLabel="Sin definir" options={opts(DATA_STATE)} defaultValue={p.estado_datos} />
             <SelectField label="Etapa del proceso" name="estado_proceso" required options={opts(PROCESS_STAGE)} defaultValue={p.estado_proceso} />
             <p className="self-end pb-2 text-xs text-muted-foreground">Sugerida según lo cargado: <b>{PROCESS_STAGE[stageHint]}</b>. «Validado» solo cuando el encargado lo confirme.</p>
             <TextAreaField className="sm:col-span-2" label="Evidencia (privada)" name="evidencia" rows={3} defaultValue={p.evidencia} />
           </div>
         </Panel>
-        <Panel title="SIPOC (un elemento por línea)">
-          <div className="grid gap-3 sm:grid-cols-5">
-            {SIPOC.map(([k, label]) => (
-              <TextAreaField key={k} label={label} name={`sipoc_${k}`} rows={6} defaultValue={sip[k].join("\n")} />
-            ))}
-          </div>
-        </Panel>
         <SubmitButton>Guardar ficha</SubmitButton>
       </form>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Mapa y ficha rápida</h2>
+        <ProcessSheetStandalone clientId={id} processId={pid} initialSteps={steps}
+          initialFields={{
+            disparador: p.disparador, estado_datos: p.estado_datos, excepciones: p.excepciones ?? [], problemas: p.problemas,
+            sipoc: { proveedores: sip.proveedores, entradas: sip.entradas, salidas: sip.salidas, clientes: sip.clientes },
+          }}
+          actors={[...new Set([...people.filter((x) => x.area_id === p.area_id).map((x) => x.nombre), "Sistema", "Cliente", "Proveedor"])]}
+          tools={[...new Set(["Excel", "Correo", "WhatsApp", "Papel", "Sistema propio", ...(p.herramientas ?? [])])]}
+          sipocSuggestions={{ proveedores: sug("proveedores"), entradas: sug("entradas"), salidas: sug("salidas"), clientes: sug("clientes") }} />
+      </section>
 
       <Panel title="Entrevistas donde surgió este proceso (solo tú lo ves)">
         <ul className="mb-3 space-y-1 text-sm">

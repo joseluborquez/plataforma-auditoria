@@ -4,17 +4,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Guide, GuideQuestion } from "@/lib/guide";
-import type { Freq, InterviewTask, Opt, ProcessStep, TaskPatch } from "@/lib/types";
+import type { Freq, InterviewTask, Opt, ProcessFields, ProcessStep, TaskPatch } from "@/lib/types";
 import {
   addTasksAction, createProcessesFromInterviewAction, finishInterviewAction, linkExistingProcessAction,
   removeTaskAction, saveAnswerAction, saveTimingAction, toggleCheckAction, unlinkProcessFromInterviewAction, updateTaskAction,
 } from "@/app/(panel)/clientes/[id]/guion/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FREQ } from "@/lib/labels";
+import { DATA_STATE, FREQ } from "@/lib/labels";
+import { formatRange, summarize } from "@/lib/process-map";
+import { sheetChecks, VECES_POR_FRECUENCIA } from "@/lib/process-sheet";
 import { ProcessDiagram } from "@/components/process-diagram";
-import { ProcessMap } from "@/components/process-map";
+import { ProcessSheet, type SipocSuggestions } from "@/components/process-sheet";
 import { TaskInventory } from "@/components/task-inventory";
+import { useProcessFields } from "@/components/use-process-fields";
 import { useProcessSteps } from "@/components/use-process-steps";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -35,6 +38,8 @@ export type InterviewLiveProps = {
   initialTiming: Record<number, number>;
   initialTasks: InterviewTask[];
   initialSteps: Record<string, ProcessStep[]>;
+  initialFields: Record<string, ProcessFields>;
+  sipocSuggestions: SipocSuggestions;
   peopleNames: string[];
   linked: Opt[]; available: Opt[]; areas: Opt[];
   children: React.ReactNode;
@@ -125,15 +130,18 @@ export function InterviewLive(props: InterviewLiveProps) {
     try { const r = await p; setFailed(false); return r; } catch (e) { setFailed(true); throw e; } finally { setInFlight((n) => n - 1); }
   }, []);
   const stepsApi = useProcessSteps(clientId, props.initialSteps, track);
+  const fieldsApi = useProcessFields(clientId, props.initialFields, track);
   const flushSteps = stepsApi.flushAll;
+  const flushFields = fieldsApi.flushAll;
 
   const flushAll = useCallback(async () => {
     await Promise.all([
       ...Object.keys(pending.current).map((k) => flush(k)),
       ...Object.keys(taskPending.current).map((k) => flushTask(k)),
       flushSteps(),
+      flushFields(),
     ]);
-  }, [flush, flushTask, flushSteps]);
+  }, [flush, flushTask, flushSteps, flushFields]);
 
   const patchTask = useCallback((pid: string, patch: TaskPatch, delay = 0) => {
     if (!iid) return;
@@ -240,19 +248,22 @@ export function InterviewLive(props: InterviewLiveProps) {
   const starred = tasks.filter((t) => t.para_detalle);
   const sectionStats = guide.secciones.map((s, si) => {
     if (s.kind === "inventario") return { total: tasks.length, done: tasks.filter((t) => t.frecuencia).length };
-    const targets: (string | undefined)[] = s.kind === "detalle" && starred.length ? starred.map((t) => t.process_id) : [undefined];
+    if (s.kind === "detalle") {
+      const checksOf = starred.map((t) => sheetChecks(stepsApi.stepsOf(t.process_id), fieldsApi.fieldsOf(t.process_id)));
+      return { total: checksOf.length * 5, done: checksOf.reduce((n, c) => n + c.filter((x) => x.done).length, 0) };
+    }
+    const targets: (string | undefined)[] = [undefined];
     let done = 0;
     for (const tg of targets) s.preguntas.forEach((q, qi) => { if (qDone(q, keyOf(si, qi, tg))) done++; });
     return { total: s.preguntas.length * targets.length, done };
   });
-  const [detailSel, setDetailSel] = useState<string | null | undefined>(undefined);
-  const detailId = detailSel === undefined || (detailSel !== null && !starred.some((t) => t.process_id === detailSel))
-    ? starred[0]?.process_id ?? null : detailSel;
+  const [detailSel, setDetailSel] = useState<string | null>(null);
+  const detailId = detailSel && starred.some((t) => t.process_id === detailSel) ? detailSel : starred[0]?.process_id ?? null;
   const totalQ = sectionStats.reduce((n, s) => n + s.total, 0);
   const totalDone = sectionStats.reduce((n, s) => n + s.done, 0);
   const totalSecs = Object.values(secs).reduce((n, v) => n + v, 0);
 
-  const status = readOnly ? null : failed ? "Sin conexión, reintentando…" : unsaved + stepsApi.pendingCount > 0 || inFlight > 0 ? "Guardando…" : "Guardado ✓";
+  const status = readOnly ? null : failed ? "Sin conexión, reintentando…" : unsaved + stepsApi.pendingCount + fieldsApi.pendingCount > 0 || inFlight > 0 ? "Guardando…" : "Guardado ✓";
 
   /* ───────── Finalizar ───────── */
   const [finished, setFinished] = useState(false);
@@ -423,59 +434,85 @@ export function InterviewLive(props: InterviewLiveProps) {
                       );
                     })()}
                   </>
+                ) : s.kind === "detalle" ? (
+                  <>
+                    <details className="rounded-xl border bg-card p-4">
+                      <summary className="cursor-pointer text-sm font-medium text-muted-foreground">Preguntas guía para la conversación</summary>
+                      <ul className="mt-3 space-y-2 text-sm">
+                        {s.preguntas.map((q, qi) => (
+                          <li key={qi} className="space-y-1">
+                            <p>{qi + 1}. {q.texto}</p>
+                            {q.sondeo && <p className="text-xs text-muted-foreground">Sondeo: {q.sondeo}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                    {starred.length === 0 ? (
+                      <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+                        Aún no elegiste tareas para detallar. Marca <b>⭐ Detallar</b> en el{" "}
+                        <button type="button" className="text-primary hover:underline"
+                          onClick={() => goTo(guide.secciones.findIndex((x) => x.kind === "inventario") + 1)}>inventario</button>
+                        {" "}y aparecerán aquí, una por una.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3">
+                          <span className="text-xs text-muted-foreground">Tarea que se está detallando:</span>
+                          {starred.map((t) => {
+                            const dn = sheetChecks(stepsApi.stepsOf(t.process_id), fieldsApi.fieldsOf(t.process_id)).filter((x) => x.done).length;
+                            return (
+                              <button key={t.process_id} type="button" aria-pressed={detailId === t.process_id} onClick={() => setDetailSel(t.process_id)}
+                                className={cn("rounded-md border px-2.5 py-1 text-sm", detailId === t.process_id ? "border-primary bg-accent" : "text-muted-foreground hover:text-foreground")}>
+                                {t.nombre} <span className="font-mono text-[11px]">{dn}/5</span>
+                              </button>
+                            );
+                          })}
+                          {detailId && <Link href={`/clientes/${clientId}/procesos/${detailId}`} target="_blank" className="ml-auto text-xs text-primary hover:underline">Abrir ficha del proceso ↗</Link>}
+                        </div>
+                        {detailId && !readOnly && (() => {
+                          const task = starred.find((t) => t.process_id === detailId);
+                          return (
+                            <ProcessSheet key={detailId} clientId={clientId} processId={detailId}
+                              steps={stepsApi.stepsOf(detailId)} fields={fieldsApi.fieldsOf(detailId)} stepsApi={stepsApi}
+                              onFields={(p, d) => fieldsApi.patch(detailId, p, d)}
+                              actors={[...new Set([...props.peopleNames, "Sistema", "Cliente", "Proveedor"])]}
+                              tools={[...new Set([...["Excel", "Correo", "WhatsApp", "Papel", "Sistema propio"], ...starred.flatMap((t) => stepsApi.stepsOf(t.process_id).map((x) => x.herramienta ?? ""))].filter(Boolean))]}
+                              sipocSuggestions={props.sipocSuggestions}
+                              defaultVeces={task?.frecuencia ? VECES_POR_FRECUENCIA[task.frecuencia] : null}
+                              defaultMetodo={tipo === "trabajador" ? "cronometrado" : "declarado"} />
+                          );
+                        })()}
+                      </>
+                    )}
+                    {(() => {
+                      const legacy = Object.entries(answers)
+                        .filter(([k, a]) => k.startsWith(`s${step.index}q`) && a.respuesta.trim())
+                        .map(([k, a]) => {
+                          const [base, tid] = k.split(":");
+                          return { k, q: s.preguntas[Number(base.split("q")[1])]?.texto ?? base, tarea: tid ? tasks.find((t) => t.process_id === tid)?.nombre : undefined, r: a.respuesta };
+                        });
+                      return legacy.length > 0 && (
+                        <details className="rounded-xl border bg-card p-4 text-sm">
+                          <summary className="cursor-pointer text-xs text-muted-foreground">Notas guardadas antes en estas preguntas ({legacy.length})</summary>
+                          <ul className="mt-2 space-y-2">
+                            {legacy.map((x) => <li key={x.k}><p className="text-xs text-muted-foreground">{x.tarea ? `${x.tarea} · ` : ""}{x.q}</p><p className="whitespace-pre-wrap">{x.r}</p></li>)}
+                          </ul>
+                        </details>
+                      );
+                    })()}
+                  </>
                 ) : (
                   <>
-                    {s.kind === "detalle" && (
-                      <div className="space-y-2 rounded-xl border bg-card p-3">
-                        {starred.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">
-                            Aún no elegiste tareas para detallar. Marca <b>⭐ Detallar</b> en el{" "}
-                            <button type="button" className="text-primary hover:underline"
-                              onClick={() => goTo(guide.secciones.findIndex((x) => x.kind === "inventario") + 1)}>inventario</button>
-                            {" "}y volverán aquí, una por una.
-                          </p>
-                        ) : (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs text-muted-foreground">Tarea que se está detallando:</span>
-                            {starred.map((t) => {
-                              const dn = s.preguntas.filter((q, qi) => qDone(q, keyOf(step.index, qi, t.process_id))).length;
-                              return (
-                                <button key={t.process_id} type="button" aria-pressed={detailId === t.process_id}
-                                  onClick={() => setDetailSel(t.process_id)}
-                                  className={cn("rounded-md border px-2.5 py-1 text-sm", detailId === t.process_id ? "border-primary bg-accent" : "text-muted-foreground hover:text-foreground")}>
-                                  {t.nombre} <span className="font-mono text-[11px]">{dn}/{s.preguntas.length}</span>
-                                </button>
-                              );
-                            })}
-                            <button type="button" aria-pressed={detailId === null} onClick={() => setDetailSel(null)}
-                              className={cn("rounded-md border px-2.5 py-1 text-sm", detailId === null ? "border-primary bg-accent" : "text-muted-foreground hover:text-foreground")}>General</button>
-                            {detailId && (
-                              <Link href={`/clientes/${clientId}/procesos/${detailId}`} target="_blank" className="ml-auto text-xs text-primary hover:underline">Abrir ficha del proceso ↗</Link>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {s.kind === "detalle" && detailId && !readOnly && (
-                      <div className="space-y-2">
-                        <h3 className="text-sm font-medium text-muted-foreground">Mapa del proceso: {starred.find((t) => t.process_id === detailId)?.nombre}</h3>
-                        <ProcessMap processId={detailId} steps={stepsApi.stepsOf(detailId)} api={stepsApi}
-                          actors={[...new Set([...props.peopleNames, "Sistema", "Cliente", "Proveedor"])]}
-                          tools={[...new Set([...["Excel", "Correo", "WhatsApp", "Papel", "Sistema propio"], ...starred.flatMap((t) => stepsApi.stepsOf(t.process_id).map((x) => x.herramienta ?? ""))].filter(Boolean))]} />
-                        <p className="pt-2 text-sm font-medium text-muted-foreground">Preguntas de apoyo</p>
-                      </div>
-                    )}
                     <ol className="space-y-3">
                       {s.preguntas.map((q, qi) => {
-                        const target = s.kind === "detalle" ? detailId ?? undefined : undefined;
-                        const k = keyOf(step.index, qi, target);
+                        const k = keyOf(step.index, qi);
                         return (
                           <li key={`${iid}-${k}`}><QuestionCard q={q} index={qi} k={k} a={answers[k] ?? EMPTY} readOnly={readOnly}
                             onChange={change} onFlush={flush} /></li>
                         );
                       })}
                     </ol>
-                    {!readOnly && iid && s.kind !== "detalle" && (
+                    {!readOnly && iid && (
                       <ProcessesCard clientId={clientId} interviewId={iid} defaultAreaId={interview?.area_id ?? null}
                         linked={linked} available={available} areas={areas} openByDefault={false} />
                     )}
@@ -565,6 +602,28 @@ export function InterviewLive(props: InterviewLiveProps) {
                     </tbody>
                   </table>
                 )
+              ) : s.kind === "detalle" ? (
+                starred.length === 0 ? <p className="text-sm">—</p> : starred.map((tg) => {
+                  const st = stepsApi.stepsOf(tg.process_id), f = fieldsApi.fieldsOf(tg.process_id), sm = summarize(st);
+                  const list = (l: string[]) => (l.length ? l.join(", ") : "—");
+                  return (
+                    <div key={tg.process_id} className="break-inside-avoid space-y-2 text-sm">
+                      <p className="font-medium underline">Tarea: {tg.nombre}</p>
+                      <p><b>Disparador:</b> {f.disparador ?? "—"} · <b>Datos:</b> {f.estado_datos ? DATA_STATE[f.estado_datos] : "—"} · <b>Tiempo:</b> {formatRange(sm.minutosMin, sm.minutosMax) || "—"}</p>
+                      <p><b>Proveedores:</b> {list(f.sipoc.proveedores)} · <b>Entradas:</b> {list(f.sipoc.entradas)} · <b>Salidas:</b> {list(f.sipoc.salidas)} · <b>Clientes:</b> {list(f.sipoc.clientes)}</p>
+                      <p><b>Herramientas:</b> {list(sm.herramientas)} · <b>Excepciones:</b> {list(f.excepciones)}</p>
+                      {(sm.problemas.length > 0 || f.problemas) && (
+                        <p><b>Problemas:</b> {[...sm.problemas.map((p) => `${p.texto}${p.nota ? ` (${p.nota})` : ""}`), f.problemas].filter(Boolean).join("; ")}</p>
+                      )}
+                      {st.length > 0 && (
+                        <>
+                          <ProcessDiagram steps={st} label={`Diagrama de ${tg.nombre}`} />
+                          <ol className="list-decimal pl-5">{st.map((x) => <li key={x.id}>{x.texto}{x.problema ? " ⚠" : ""}{x.nota ? ` — ${x.nota}` : ""}</li>)}</ol>
+                        </>
+                      )}
+                    </div>
+                  );
+                })
               ) : targets.map((tg) => (
                 <div key={tg?.process_id ?? "general"} className="space-y-2">
                   {tg && <p className="text-sm font-medium underline">Tarea: {tg.nombre}</p>}
