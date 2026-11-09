@@ -26,6 +26,12 @@ insert into public.interviews (id, client_id, area_id, person_id, tipo) values
   ('10000000-0000-0000-0000-0000000000a1', 'c0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-0000000000a1', '90000000-0000-0000-0000-0000000000a1', 'encargado');
 insert into public.interview_notes (interview_id, notas_privadas) values
   ('10000000-0000-0000-0000-0000000000a1', 'PRIVADO');
+insert into public.interview_answers (interview_id, pregunta_key, respuesta, no_aplica) values
+  ('10000000-0000-0000-0000-0000000000a1', 's0q0', 'RESPUESTA PRIVADA', false);
+insert into public.interview_checks (interview_id, item_key) values
+  ('10000000-0000-0000-0000-0000000000a1', 'pre:0');
+insert into public.interview_timing (interview_id, seccion, segundos) values
+  ('10000000-0000-0000-0000-0000000000a1', 0, 90);
 insert into public.processes (id, client_id, area_id, nombre, responsable, evidencia) values
   ('20000000-0000-0000-0000-0000000000a1', 'c0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-0000000000a1', 'Proceso A1', 'Resp A1', 'Evid A1'),
   ('20000000-0000-0000-0000-0000000000a2', 'c0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-0000000000a2', 'Proceso A2', 'Resp A2', 'Evid A2'),
@@ -42,8 +48,8 @@ insert into public.scores (process_id, frecuencia_volumen, tiempo, repetitivo_re
 insert into public.roadmap_items (id, client_id, process_id, titulo, fase, prioridad, notas) values
   ('30000000-0000-0000-0000-0000000000a1', 'c0000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-0000000000a1', 'RM A1', 'quick_win', 'alta', 'nota rm'),
   ('30000000-0000-0000-0000-0000000000a2', 'c0000000-0000-0000-0000-00000000000a', '20000000-0000-0000-0000-0000000000a2', 'RM A2', 'quick_win', 'alta', null),
-  ('c0000000-0000-0000-0000-00000000000a', null, 'RM A general', 'quick_win', 'alta', null),
-  ('c0000000-0000-0000-0000-00000000000b', '20000000-0000-0000-0000-0000000000b1', 'RM B1', 'quick_win', 'alta', null);
+  ('30000000-0000-0000-0000-0000000000a3', 'c0000000-0000-0000-0000-00000000000a', null, 'RM A general', 'quick_win', 'alta', null),
+  ('30000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-00000000000b', '20000000-0000-0000-0000-0000000000b1', 'RM B1', 'quick_win', 'alta', null);
 insert into public.risk_reviews (roadmap_item_id, responsable_cliente, notas, nivel)
   select id, 'RESPONSABLE PRIVADO', 'NOTA RIESGO PRIVADA', 'alto' from public.roadmap_items where titulo = 'RM A1';
 insert into public.documents (client_id, area_id, nombre, ruta_storage, confidencial) values
@@ -87,12 +93,17 @@ grant execute on all functions in schema pg_temp to public;
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1');
 select pg_temp.expect('owner ve clients', (select count(*) from public.clients where nombre in ('Cliente A','Cliente B')), 2);
 select pg_temp.expect('owner ve interview_notes', (select count(*) from public.interview_notes where notas_privadas = 'PRIVADO'), 1);
+select pg_temp.expect('owner ve interview_answers', (select count(*) from public.interview_answers where respuesta = 'RESPUESTA PRIVADA'), 1);
+select pg_temp.expect('owner ve interview_checks y timing', (select count(*) from public.interview_checks) + (select count(*) from public.interview_timing), 2);
 select pg_temp.expect('owner ve time_log', (select count(*) from public.time_log where client_id = 'c0000000-0000-0000-0000-00000000000a'), 1);
 reset role;
 
 -- ═════════ VIEWER GLOBAL del cliente A ═════════
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000b1');
 select pg_temp.expect('viewer: 0 interview_notes', (select count(*) from public.interview_notes), 0);
+select pg_temp.expect('viewer: 0 interview_answers', (select count(*) from public.interview_answers), 0);
+select pg_temp.expect('viewer: 0 interview_checks', (select count(*) from public.interview_checks), 0);
+select pg_temp.expect('viewer: 0 interview_timing', (select count(*) from public.interview_timing), 0);
 select pg_temp.expect('viewer: 0 time_log', (select count(*) from public.time_log), 0);
 select pg_temp.expect('viewer: 0 interviews', (select count(*) from public.interviews), 0);
 select pg_temp.expect('viewer: 0 people', (select count(*) from public.people), 0);
@@ -127,6 +138,7 @@ select pg_temp.expect_denied('vista sin notas roadmap', 'select notas from publi
 select pg_temp.expect_denied('vista sin rut', 'select rut from public.report_clients');
 -- Solo lectura
 select pg_temp.expect_denied('viewer no inserta', $q$insert into public.clients (nombre) values ('x')$q$);
+select pg_temp.expect_denied('viewer no escribe respuestas', $q$insert into public.interview_answers (interview_id, pregunta_key, respuesta) values ('10000000-0000-0000-0000-0000000000a1','s0q1','x')$q$);
 select pg_temp.expect_denied('viewer no escribe notas', $q$insert into public.interview_notes (interview_id, notas_privadas) values ('10000000-0000-0000-0000-0000000000a1','x')$q$);
 select pg_temp.expect_denied('viewer no escribe horas', $q$insert into public.time_log (client_id, actividad, minutos) values ('c0000000-0000-0000-0000-00000000000a','otro',5)$q$);
 update public.profiles set role = 'owner';  -- sin política de UPDATE: afecta 0 filas (se verifica abajo)
@@ -168,6 +180,9 @@ set local role anon;
 select pg_temp.expect_denied('anon no lee clients', 'select * from public.clients');
 select pg_temp.expect_denied('anon no lee vista', 'select * from public.report_processes');
 select pg_temp.expect_denied('anon no lee notas', 'select * from public.interview_notes');
+select pg_temp.expect_denied('anon no lee respuestas', 'select * from public.interview_answers');
+select pg_temp.expect_denied('anon no lee checklists', 'select * from public.interview_checks');
+select pg_temp.expect_denied('anon no lee tiempos', 'select * from public.interview_timing');
 select pg_temp.expect_denied('anon no lee riesgos', 'select * from public.risk_reviews');
 select pg_temp.expect_denied('anon no lee vínculos', 'select * from public.interview_processes');
 reset role;

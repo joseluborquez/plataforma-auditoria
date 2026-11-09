@@ -96,10 +96,13 @@
   }
 }
 
+.print-only { display: none; }
+
 /* Impresión del reporte: fondo blanco y sin navegación */
 @media print {
   :root { color-scheme: light; --background:#fff; --foreground:#111; --card:#fff; --card-foreground:#111; --muted:#f3f3f3; --muted-foreground:#555; --border:#ddd; }
   .no-print { display: none !important; }
+  .print-only { display: block !important; }
   .print-break { break-before: page; }
   body { background: #fff !important; color: #111 !important; }
 }
