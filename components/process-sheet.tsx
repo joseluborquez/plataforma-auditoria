@@ -77,10 +77,17 @@ export function ProcessSheet({ clientId, processId, name, steps, fields, stepsAp
 
       <ProcessMap processId={processId} name={name} steps={steps} actors={actors} tools={tools} api={stepsApi} />
 
-      <Block title="Entradas y salidas" hint="SIPOC: lo que entra, lo que sale y con quién se relaciona. El «Proceso» son los pasos de arriba.">
+      <Block title="¿Qué entra y qué sale?" hint="Lo que recibe el proceso y lo que entrega. Lo que pasa en el medio son los pasos de arriba.">
+        <details className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Ver un ejemplo</summary>
+          <p className="mt-2">
+            <b>Liquidación de sueldos.</b> Lo recibe de: jefaturas y control de asistencia. Necesita: planilla de horas y licencias médicas.
+            Entrega: liquidaciones y archivo para el banco. Se lo entrega a: el trabajador y Contabilidad.
+          </p>
+        </details>
         <div className="grid gap-4 md:grid-cols-2">
-          {SIPOC_LISTS.map(([k, label, hint]) => (
-            <ChipList key={k} label={label} hint={hint} values={fields.sipoc[k]} suggestions={sipocSuggestions[k]}
+          {SIPOC_LISTS.map(([k, label, hint, example]) => (
+            <ChipList key={k} label={label} hint={hint} placeholder={example} values={fields.sipoc[k]} suggestions={sipocSuggestions[k]}
               onChange={(v) => onFields({ sipoc: { [k]: v } }, 300)} />
           ))}
         </div>

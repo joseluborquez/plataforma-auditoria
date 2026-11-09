@@ -3,12 +3,13 @@ import { summarize } from "./process-map";
 import type { Freq, ProcessFields, ProcessStep, SipocLists } from "./types";
 
 export const DISPARADORES = ["Correo recibido", "Fecha o plazo", "Solicitud verbal", "Falla o incidente", "Llega un documento"];
+/** Etiquetas en lenguaje simple (SIPOC: proveedores, entradas, salidas, clientes), en el orden en que ocurre el proceso. */
 export const SIPOC_LISTS = [
-  ["proveedores", "Proveedores", "¿De dónde vienen los datos o documentos?"],
-  ["entradas", "Entradas", "Lo que se necesita para partir"],
-  ["salidas", "Salidas", "Lo que se entrega al final"],
-  ["clientes", "Clientes", "¿A quién se le entrega?"],
-] as const satisfies readonly (readonly [keyof SipocLists, string, string])[];
+  ["proveedores", "¿De quién lo recibe?", "Ej.: jefatura de área, el cliente", "Ej.: Jefatura de área, Cliente"],
+  ["entradas", "¿Qué necesita para partir?", "Documentos o datos", "Ej.: planilla de horas, licencias médicas"],
+  ["salidas", "¿Qué entrega al final?", "El resultado", "Ej.: liquidaciones, archivo para el banco"],
+  ["clientes", "¿A quién se lo entrega?", "Quién lo recibe", "Ej.: el trabajador, Contabilidad"],
+] as const satisfies readonly (readonly [keyof SipocLists, string, string, string])[];
 
 /** Veces por semana sugeridas según la frecuencia declarada en el inventario. */
 export const VECES_POR_FRECUENCIA: Record<Freq, number | null> = { diaria: 5, semanal: 1, mensual: 0.25, otra: null };
