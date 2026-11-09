@@ -36,8 +36,12 @@ insert into public.processes (id, client_id, area_id, nombre, responsable, evide
   ('20000000-0000-0000-0000-0000000000a1', 'c0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-0000000000a1', 'Proceso A1', 'Resp A1', 'Evid A1'),
   ('20000000-0000-0000-0000-0000000000a2', 'c0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-0000000000a2', 'Proceso A2', 'Resp A2', 'Evid A2'),
   ('20000000-0000-0000-0000-0000000000b1', 'c0000000-0000-0000-0000-00000000000b', 'a0000000-0000-0000-0000-0000000000b1', 'Proceso B1', 'Resp B1', 'Evid B1');
-insert into public.interview_processes (interview_id, process_id, frecuencia, quien_hace, pesa_tiempo, nota, para_detalle) values
-  ('10000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1', 'semanal', 'QUIEN PRIVADO', true, 'NOTA TAREA PRIVADA', true);
+insert into public.interview_processes (interview_id, process_id, frecuencia, quien_hace, pesa_tiempo, nota, para_detalle, prioridad, idea, restricciones, aprueba) values
+  ('10000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1', 'semanal', 'QUIEN PRIVADO', true, 'NOTA TAREA PRIVADA', true, 1, 'IDEA PRIVADA', '{RESTRICCION PRIVADA}', 'APRUEBA PRIVADO');
+insert into public.interview_problems (interview_id, process_id, tipo, texto) values
+  ('10000000-0000-0000-0000-0000000000a1', '20000000-0000-0000-0000-0000000000a1', 'riesgo_legal', 'PROBLEMA PRIVADO'),
+  ('10000000-0000-0000-0000-0000000000a1', null, 'dependencia', 'PROBLEMA GENERAL PRIVADO');
+update public.interviews set restricciones = '{RESTRICCION AREA PRIVADA}', aprueba = 'APRUEBA AREA PRIVADO' where id = '10000000-0000-0000-0000-0000000000a1';
 insert into public.process_steps (process_id, orden, texto, actor, herramienta, minutos_min, minutos_max, problema, nota) values
   ('20000000-0000-0000-0000-0000000000a1', 0, 'PASO PRIVADO', 'ACTOR PRIVADO', 'Excel', 5, 10, true, 'NOTA PASO PRIVADA'),
   ('20000000-0000-0000-0000-0000000000a1', 1, 'Paso en sistema', 'Sistema', null, null, null, false, null),
@@ -102,6 +106,8 @@ select pg_temp.expect_denied('frecuencia inválida rechazada', $q$update public.
 select pg_temp.expect('owner ve los pasos del proceso', (select count(*) from public.process_steps where texto = 'PASO PRIVADO'), 1);
 select pg_temp.expect('owner ve las personas reales en la tabla', (select count(*) from public.process_steps where actor = 'ACTOR PRIVADO'), 1);
 select pg_temp.expect_denied('rango de pasos inválido rechazado', $q$update public.process_steps set minutos_min = 20, minutos_max = 1$q$);
+select pg_temp.expect('owner ve los problemas y las prioridades', (select count(*) from public.interview_problems) + (select count(*) from public.interview_processes where prioridad = 1 and idea = 'IDEA PRIVADA'), 3);
+select pg_temp.expect_denied('prioridad fuera de rango rechazada', $q$update public.interview_processes set prioridad = 7$q$);
 select pg_temp.expect('owner ve interview_answers', (select count(*) from public.interview_answers where respuesta = 'RESPUESTA PRIVADA'), 1);
 select pg_temp.expect('owner ve interview_checks y timing', (select count(*) from public.interview_checks) + (select count(*) from public.interview_timing), 2);
 select pg_temp.expect('owner ve time_log', (select count(*) from public.time_log where client_id = 'c0000000-0000-0000-0000-00000000000a'), 1);
@@ -116,6 +122,9 @@ select pg_temp.expect('vista de pasos no revela personas', (select count(*) from
 select pg_temp.expect('vista de pasos numera a las personas', (select count(*) from public.report_process_steps where actor in ('Persona 1', 'Persona 2')), 2);
 select pg_temp.expect('vista de pasos conserva el rol Sistema', (select count(*) from public.report_process_steps where actor = 'Sistema'), 1);
 select pg_temp.expect_denied('vista de pasos sin notas', 'select nota from public.report_process_steps');
+select pg_temp.expect('viewer: 0 interview_problems', (select count(*) from public.interview_problems), 0);
+select pg_temp.expect('viewer: 0 interviews (también sus condiciones de área)', (select count(*) from public.interviews), 0);
+select pg_temp.expect_denied('viewer no escribe problemas', $q$insert into public.interview_problems (interview_id, tipo, texto) values ('10000000-0000-0000-0000-0000000000a1', 'otro', 'x')$q$);
 select pg_temp.expect_denied('viewer no escribe pasos', $q$insert into public.process_steps (process_id, orden, texto) values ('20000000-0000-0000-0000-0000000000a1', 1, 'x')$q$);
 select pg_temp.expect('viewer: 0 interview_answers', (select count(*) from public.interview_answers), 0);
 select pg_temp.expect('viewer: 0 interview_checks', (select count(*) from public.interview_checks), 0);
@@ -201,6 +210,7 @@ select pg_temp.expect_denied('anon no lee clients', 'select * from public.client
 select pg_temp.expect_denied('anon no lee vista', 'select * from public.report_processes');
 select pg_temp.expect_denied('anon no lee notas', 'select * from public.interview_notes');
 select pg_temp.expect_denied('anon no lee pasos', 'select * from public.process_steps');
+select pg_temp.expect_denied('anon no lee problemas', 'select * from public.interview_problems');
 select pg_temp.expect_denied('anon no lee pasos del reporte', 'select * from public.report_process_steps');
 select pg_temp.expect_denied('anon no lee respuestas', 'select * from public.interview_answers');
 select pg_temp.expect_denied('anon no lee checklists', 'select * from public.interview_checks');

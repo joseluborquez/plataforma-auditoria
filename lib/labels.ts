@@ -38,3 +38,7 @@ export const FREQ: Record<"diaria" | "semanal" | "mensual" | "otra", string> = {
 export const STEP_TYPE: Record<"accion" | "decision" | "espera" | "sistema", string> = {
   accion: "Acción", decision: "Decisión", espera: "Espera de otro", sistema: "En sistema",
 };
+
+export const PROBLEM_TYPE: Record<"error" | "dependencia" | "riesgo_legal" | "espera" | "otro", string> = {
+  error: "Error o retrabajo", dependencia: "Depende de una persona", riesgo_legal: "Riesgo legal", espera: "Espera de otros", otro: "Otro",
+};

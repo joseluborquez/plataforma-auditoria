@@ -27,7 +27,7 @@ export type Person = {
 export type Interview = {
   id: string; client_id: string; area_id: string | null; person_id: string | null;
   tipo: InterviewType; fecha_hora: string | null; duracion_min: number | null;
-  estado: InterviewStatus; resumen: string | null;
+  estado: InterviewStatus; resumen: string | null; restricciones: string[]; aprueba: string | null;
 };
 export type Sipoc = {
   proveedores: string[]; entradas: string[]; proceso: string[]; salidas: string[]; clientes: string[];
@@ -68,8 +68,11 @@ export type InterviewTask = {
   process_id: string; nombre: string; area_id: string | null;
   frecuencia: Freq | null; quien_hace: string | null;
   pesa_tiempo: boolean; molesta_errores: boolean; nota: string | null; para_detalle: boolean;
+  prioridad: 1 | 2 | 3 | null; idea: string | null; restricciones: string[]; aprueba: string | null;
 };
-export type TaskPatch = Partial<Pick<InterviewTask, "nombre" | "frecuencia" | "quien_hace" | "pesa_tiempo" | "molesta_errores" | "nota" | "para_detalle">>;
+export type TaskPatch = Partial<Pick<InterviewTask, "nombre" | "frecuencia" | "quien_hace" | "pesa_tiempo" | "molesta_errores" | "nota" | "para_detalle" | "prioridad" | "idea" | "restricciones" | "aprueba">>;
+/** Condiciones del cambio que valen para toda el área. */
+export type AreaConditions = { restricciones: string[]; aprueba: string | null };
 export type Opt = { id: string; nombre: string; area_id?: string | null };
 
 export type StepType = "accion" | "decision" | "espera" | "sistema";
@@ -87,3 +90,11 @@ export type ProcessFields = {
   disparador: string | null; estado_datos: DataState | null; excepciones: string[]; problemas: string | null; sipoc: SipocLists;
 };
 export type FieldsPatch = Partial<Omit<ProcessFields, "sipoc">> & { sipoc?: Partial<SipocLists> };
+
+export type ProblemType = "error" | "dependencia" | "riesgo_legal" | "espera" | "otro";
+/** Problema o riesgo dicho en una entrevista. process_id null = hallazgo general del área. Solo dueño. */
+export type InterviewProblem = {
+  id: string; interview_id: string; process_id: string | null; step_id: string | null;
+  tipo: ProblemType; texto: string; nota: string | null;
+};
+export type ProblemPatch = Partial<Pick<InterviewProblem, "process_id" | "step_id" | "tipo" | "texto" | "nota">>;

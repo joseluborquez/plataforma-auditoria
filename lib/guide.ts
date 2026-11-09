@@ -3,8 +3,8 @@
 
 /** control: "check" = acuerdo marcable; "sino" = Sí/No; "check_nota" = marcable con una nota corta. Sin control = respuesta de texto. */
 export type GuideQuestion = { texto: string; campo?: string; sondeo?: string; control?: "check" | "sino" | "check_nota" };
-/** kind: "checklist" = acuerdos marcables; "inventario" = tabla de captura rápida de tareas; "detalle" = preguntas repetidas por cada tarea elegida. */
-export type GuideSection = { titulo: string; minutos: number; objetivo: string; preguntas: GuideQuestion[]; kind?: "checklist" | "inventario" | "detalle" };
+/** kind: "checklist" = acuerdos marcables; "inventario" = tabla de captura rápida de tareas; "detalle" = ficha rápida por cada tarea elegida; "problemas" = lista de problemas ligados a procesos; "prioridades" = prioridad, idea, restricciones y quién aprueba por tarea. */
+export type GuideSection = { titulo: string; minutos: number; objetivo: string; preguntas: GuideQuestion[]; kind?: "checklist" | "inventario" | "detalle" | "problemas" | "prioridades" };
 export type Guide = { titulo: string; resumen: string; secciones: GuideSection[] };
 
 const APERTURA_ENCARGADO: GuideSection = {
@@ -60,7 +60,7 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
         ],
       },
       {
-        titulo: "5. Problemas y riesgos", minutos: 15,
+        titulo: "5. Problemas y riesgos", minutos: 15, kind: "problemas",
         objetivo: "Detectar errores, retrabajo, dependencia de personas y riesgos legales o normativos.",
         preguntas: [
           { texto: "¿Qué errores o correcciones se repiten? ¿Qué costo o reclamo han traído?", campo: "Problemas / Rúbrica: errores y retrabajo" },
@@ -70,7 +70,7 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
         ],
       },
       {
-        titulo: "6. Prioridades y condiciones", minutos: 10,
+        titulo: "6. Prioridades y condiciones", minutos: 10, kind: "prioridades",
         objetivo: "Saber qué es más valioso para el área y qué restricciones hay para cambiar algo.",
         preguntas: [
           { texto: "Si pudiera eliminar una tarea de su semana, ¿cuál sería?" },
@@ -133,7 +133,7 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
         ],
       },
       {
-        titulo: "5. Fricciones y errores", minutos: 15,
+        titulo: "5. Fricciones y errores", minutos: 15, kind: "problemas",
         objetivo: "Qué hace perder tiempo o genera errores desde la mirada de quien lo ejecuta.",
         preguntas: [
           { texto: "¿Qué datos tiene que escribir más de una vez o en más de un lugar?", campo: "Problemas / Rúbrica: errores y retrabajo" },
@@ -142,12 +142,12 @@ export const GUIDES: Record<"encargado" | "trabajador", Guide> = {
         ],
       },
       {
-        titulo: "6. Ideas y cierre", minutos: 15,
+        titulo: "6. Ideas y cierre", minutos: 15, kind: "prioridades",
         objetivo: "Recoger su propuesta y cerrar con respeto.",
         preguntas: [
           { texto: "Si pudiera cambiar una sola cosa de este trabajo, ¿qué sería?" },
-          { texto: "Resumir lo entendido y confirmar. Recordar la confidencialidad." },
-          { texto: "Pedir autorización para volver a observar o medir si hace falta." },
+          { texto: "Resumí lo entendido y lo confirmamos. Recordé la confidencialidad.", control: "check" },
+          { texto: "¿Autoriza que volvamos a observar o medir si hace falta?", control: "sino" },
         ],
       },
     ],

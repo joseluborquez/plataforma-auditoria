@@ -5,7 +5,7 @@ import { requireOwner } from "@/lib/auth";
 import { rows } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { topValues } from "@/lib/process-sheet";
-import type { Area, Freq, Interview, InterviewTask, Person, Process, ProcessFields, ProcessStep } from "@/lib/types";
+import type { Area, Freq, Interview, InterviewProblem, InterviewTask, Person, Process, ProcessFields, ProcessStep } from "@/lib/types";
 import { Panel } from "@/components/form";
 import { InterviewLive, type LiveAnswer } from "@/components/interview-live";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 type LinkRow = {
   process_id: string; frecuencia: Freq | null; quien_hace: string | null; pesa_tiempo: boolean; molesta_errores: boolean;
   nota: string | null; para_detalle: boolean;
+  prioridad: 1 | 2 | 3 | null; idea: string | null; restricciones: string[] | null; aprueba: string | null;
   processes: { nombre: string; area_id: string } | { nombre: string; area_id: string }[] | null;
 };
 
@@ -41,6 +42,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
   let initialTasks: InterviewTask[] = [];
   const initialSteps: Record<string, ProcessStep[]> = {};
   let measuredIds: string[] = [];
+  let initialProblems: InterviewProblem[] = [];
   if (selected) {
     const [answers, checks, timing, links] = await Promise.all([
       supabase.from("interview_answers").select("pregunta_key, respuesta, no_aplica").eq("interview_id", selected.id)
@@ -48,12 +50,13 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
       supabase.from("interview_checks").select("item_key").eq("interview_id", selected.id).then(rows<{ item_key: string }>),
       supabase.from("interview_timing").select("seccion, segundos").eq("interview_id", selected.id).then(rows<{ seccion: number; segundos: number }>),
       supabase.from("interview_processes")
-        .select("process_id, frecuencia, quien_hace, pesa_tiempo, molesta_errores, nota, para_detalle, processes(nombre, area_id)")
+        .select("process_id, frecuencia, quien_hace, pesa_tiempo, molesta_errores, nota, para_detalle, prioridad, idea, restricciones, aprueba, processes(nombre, area_id)")
         .eq("interview_id", selected.id).order("created_at").order("process_id").then(rows<LinkRow>),
     ]);
     initialAnswers = Object.fromEntries(answers.map((a) => [a.pregunta_key, { respuesta: a.respuesta, no_aplica: a.no_aplica }]));
     initialChecks = checks.map((c) => c.item_key);
     initialTiming = Object.fromEntries(timing.map((t) => [t.seccion, t.segundos]));
+    initialProblems = await supabase.from("interview_problems").select("*").eq("interview_id", selected.id).order("created_at").then(rows<InterviewProblem>);
     linkedIds = links.map((l) => l.process_id);
     if (linkedIds.length) {
       const steps = await supabase.from("process_steps").select("*").in("process_id", linkedIds).order("orden").then(rows<ProcessStep>);
@@ -66,6 +69,7 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
       return {
         process_id: l.process_id, nombre: pr?.nombre ?? "(sin nombre)", area_id: pr?.area_id ?? null, frecuencia: l.frecuencia,
         quien_hace: l.quien_hace, pesa_tiempo: l.pesa_tiempo, molesta_errores: l.molesta_errores, nota: l.nota, para_detalle: l.para_detalle,
+        prioridad: l.prioridad, idea: l.idea, restricciones: l.restricciones ?? [], aprueba: l.aprueba,
       };
     });
   }
@@ -111,7 +115,8 @@ export default async function GuionPage({ params, searchParams }: PageProps<"/cl
         interviews={interviews.map((i) => ({ id: i.id, label: label(i) }))}
         interview={selected ? { id: selected.id, estado: selected.estado, area_id: selected.area_id } : null}
         initialAnswers={initialAnswers} initialChecks={initialChecks} initialTiming={initialTiming}
-        initialTasks={initialTasks} initialSteps={initialSteps} initialFields={initialFields} measuredIds={measuredIds} sipocSuggestions={sipocSuggestions} peopleNames={peopleNames}
+        initialTasks={initialTasks} initialSteps={initialSteps} initialFields={initialFields} measuredIds={measuredIds} initialProblems={initialProblems}
+        initialArea={{ restricciones: selected?.restricciones ?? [], aprueba: selected?.aprueba ?? null }} sipocSuggestions={sipocSuggestions} peopleNames={peopleNames}
         linked={processes.filter((p) => linkedIds.includes(p.id)).map(opt)}
         available={processes.filter((p) => !linkedIds.includes(p.id)).map(opt)}
         areas={areas.map((a) => ({ id: a.id, nombre: a.nombre }))}

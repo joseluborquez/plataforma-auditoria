@@ -91,6 +91,10 @@ const taskPatchSchema = z.object({
   molesta_errores: z.boolean().optional(),
   nota: z.string().trim().max(2000).transform(blankToNull).nullable().optional(),
   para_detalle: z.boolean().optional(),
+  prioridad: z.union([z.literal(1), z.literal(2), z.literal(3)]).nullable().optional(),
+  idea: z.string().trim().max(1000).transform(blankToNull).nullable().optional(),
+  restricciones: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+  aprueba: z.string().trim().max(200).transform(blankToNull).nullable().optional(),
 }).strict();
 
 /** Crea procesos «Identificado» a partir de las tareas dichas y los vincula a la entrevista. Devuelve las filas creadas. */
@@ -108,6 +112,7 @@ export async function addTasksAction(clientId: string, interviewId: string, area
   return created.map((p) => ({
     process_id: p.id, nombre: p.nombre, area_id: p.area_id, frecuencia: freq, quien_hace: null,
     pesa_tiempo: false, molesta_errores: false, nota: null, para_detalle: false,
+    prioridad: null, idea: null, restricciones: [], aprueba: null,
   }));
 }
 
@@ -140,4 +145,15 @@ export async function removeTaskAction(clientId: string, interviewId: string, pr
   if (unused) check(await supabase.from("processes").delete().eq("id", processId).eq("client_id", clientId));
   revalidatePath(`/clientes/${clientId}/procesos`);
   return { deleted: unused };
+}
+
+/** Condiciones del cambio que valen para toda el área (restricciones y quién aprueba). */
+export async function updateAreaConditionsAction(clientId: string, interviewId: string, patch: unknown) {
+  const { supabase } = await ownInterview(clientId, interviewId);
+  const p = z.object({
+    restricciones: z.array(z.string().trim().min(1).max(100)).max(20),
+    aprueba: z.string().trim().max(200).transform(blankToNull).nullable(),
+  }).partial().strict().parse(patch);
+  if (Object.keys(p).length === 0) return;
+  check(await supabase.from("interviews").update(p).eq("id", interviewId).eq("client_id", clientId));
 }

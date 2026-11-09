@@ -4,21 +4,26 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { Guide, GuideQuestion } from "@/lib/guide";
-import type { Freq, InterviewTask, Opt, ProcessFields, ProcessStep, TaskPatch } from "@/lib/types";
+import type { AreaConditions, Freq, InterviewProblem, InterviewTask, Opt, ProcessFields, ProcessStep, TaskPatch } from "@/lib/types";
 import {
-  addTasksAction, createProcessesFromInterviewAction, finishInterviewAction, linkExistingProcessAction,
+  addTasksAction, createProcessesFromInterviewAction, updateAreaConditionsAction, finishInterviewAction, linkExistingProcessAction,
   removeTaskAction, saveAnswerAction, saveTimingAction, toggleCheckAction, unlinkProcessFromInterviewAction, updateTaskAction,
 } from "@/app/(panel)/clientes/[id]/guion/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DATA_STATE, FREQ } from "@/lib/labels";
+import { DATA_STATE, FREQ, PROBLEM_TYPE } from "@/lib/labels";
+import { countByType } from "@/lib/problems";
 import { formatRange, summarize } from "@/lib/process-map";
 import { sheetChecks, VECES_POR_FRECUENCIA } from "@/lib/process-sheet";
 import { ProcessDiagram } from "@/components/process-diagram";
+import { PriorityBoard } from "@/components/priority-board";
+import { ProblemBoard } from "@/components/problem-board";
 import { ProcessSheet, type SipocSuggestions } from "@/components/process-sheet";
 import { TaskInventory } from "@/components/task-inventory";
+import { useProblems } from "@/components/use-problems";
 import { useProcessFields } from "@/components/use-process-fields";
 import { useProcessSteps } from "@/components/use-process-steps";
+import { useSaveQueue } from "@/components/use-save-queue";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +45,8 @@ export type InterviewLiveProps = {
   initialSteps: Record<string, ProcessStep[]>;
   initialFields: Record<string, ProcessFields>;
   measuredIds: string[];
+  initialProblems: InterviewProblem[];
+  initialArea: AreaConditions;
   sipocSuggestions: SipocSuggestions;
   peopleNames: string[];
   linked: Opt[]; available: Opt[]; areas: Opt[];
@@ -134,7 +141,32 @@ export function InterviewLive(props: InterviewLiveProps) {
   const fieldsApi = useProcessFields(clientId, props.initialFields, track);
   const [measured, setMeasured] = useState(() => new Set(props.measuredIds));
   const flushSteps = stepsApi.flushAll;
+  const problemsApi = useProblems(clientId, iid, props.initialProblems, track);
+  const flushProblems = problemsApi.flushAll;
   const flushFields = fieldsApi.flushAll;
+
+  /* Condiciones que valen para toda el área (restricciones y quién aprueba) */
+  const [area, setArea] = useState(props.initialArea);
+  const areaPending = useRef<Partial<AreaConditions> | null>(null);
+  const areaTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [areaPendingN, setAreaPendingN] = useState(0);
+  const { enqueue: enqueueArea, drain: drainArea } = useSaveQueue(track);
+  const flushArea = useCallback(async () => {
+    clearTimeout(areaTimer.current);
+    const p = areaPending.current;
+    if (!p || !iid) return;
+    areaPending.current = null;
+    setAreaPendingN(0);
+    await enqueueArea(() => updateAreaConditionsAction(clientId, iid, p));
+    await drainArea();
+  }, [clientId, iid, enqueueArea, drainArea]);
+  const patchArea = useCallback((p: Partial<AreaConditions>, delay = 0) => {
+    setArea((prev) => ({ ...prev, ...p }));
+    areaPending.current = { ...areaPending.current, ...p };
+    setAreaPendingN(1);
+    clearTimeout(areaTimer.current);
+    areaTimer.current = setTimeout(() => void flushArea(), delay);
+  }, [flushArea]);
 
   const flushAll = useCallback(async () => {
     await Promise.all([
@@ -142,8 +174,10 @@ export function InterviewLive(props: InterviewLiveProps) {
       ...Object.keys(taskPending.current).map((k) => flushTask(k)),
       flushSteps(),
       flushFields(),
+      flushProblems(),
+      flushArea(),
     ]);
-  }, [flush, flushTask, flushSteps, flushFields]);
+  }, [flush, flushTask, flushSteps, flushFields, flushProblems, flushArea]);
 
   const patchTask = useCallback((pid: string, patch: TaskPatch, delay = 0) => {
     if (!iid) return;
@@ -177,6 +211,7 @@ export function InterviewLive(props: InterviewLiveProps) {
       setTasks((prev) => [...prev, {
         process_id: pid, nombre: proc.nombre, area_id: proc.area_id ?? null, frecuencia: null, quien_hace: null,
         pesa_tiempo: false, molesta_errores: false, nota: null, para_detalle: false,
+        prioridad: null, idea: null, restricciones: [], aprueba: null,
       }]);
     }
     startTransition(() => router.refresh());
@@ -250,6 +285,17 @@ export function InterviewLive(props: InterviewLiveProps) {
   const starred = tasks.filter((t) => t.para_detalle);
   const sectionStats = guide.secciones.map((s, si) => {
     if (s.kind === "inventario") return { total: tasks.length, done: tasks.filter((t) => t.frecuencia).length };
+    if (s.kind === "problemas") {
+      if (problemsApi.problems.length === 0 && checks.has(keyOf(si, 0))) return { total: 1, done: 1 };
+      return { total: problemsApi.problems.length, done: problemsApi.problems.length };
+    }
+    if (s.kind === "prioridades") {
+      const items = tipo === "encargado"
+        ? [tasks.some((t) => t.prioridad), tasks.some((t) => t.restricciones.length) || area.restricciones.length > 0, tasks.some((t) => t.aprueba) || !!area.aprueba]
+        : [tasks.some((t) => t.idea?.trim()) || !!answers[keyOf(si, 0)]?.respuesta.trim()];
+      s.preguntas.forEach((q, qi) => { if (q.control) items.push(qDone(q, keyOf(si, qi))); });
+      return { total: items.length, done: items.filter(Boolean).length };
+    }
     if (s.kind === "detalle") {
       const checksOf = starred.map((t) => sheetChecks(stepsApi.stepsOf(t.process_id), fieldsApi.fieldsOf(t.process_id), measured.has(t.process_id)));
       return { total: checksOf.length * 5, done: checksOf.reduce((n, c) => n + c.filter((x) => x.done).length, 0) };
@@ -265,7 +311,7 @@ export function InterviewLive(props: InterviewLiveProps) {
   const totalDone = sectionStats.reduce((n, s) => n + s.done, 0);
   const totalSecs = Object.values(secs).reduce((n, v) => n + v, 0);
 
-  const status = readOnly ? null : failed ? "Sin conexión, reintentando…" : unsaved + stepsApi.pendingCount + fieldsApi.pendingCount > 0 || inFlight > 0 ? "Guardando…" : "Guardado ✓";
+  const status = readOnly ? null : failed ? "Sin conexión, reintentando…" : unsaved + stepsApi.pendingCount + fieldsApi.pendingCount + problemsApi.pendingCount + areaPendingN > 0 || inFlight > 0 ? "Guardando…" : "Guardado ✓";
 
   /* ───────── Finalizar ───────── */
   const [finished, setFinished] = useState(false);
@@ -436,6 +482,90 @@ export function InterviewLive(props: InterviewLiveProps) {
                       );
                     })()}
                   </>
+                ) : s.kind === "problemas" ? (
+                  <>
+                    <details className="rounded-xl border bg-card p-4">
+                      <summary className="cursor-pointer text-sm font-medium text-muted-foreground">Preguntas guía para la conversación</summary>
+                      <ul className="mt-3 space-y-2 text-sm">
+                        {s.preguntas.map((q, qi) => (
+                          <li key={qi} className="space-y-1">
+                            <p>{qi + 1}. {q.texto}</p>
+                            {q.sondeo && <p className="text-xs text-muted-foreground">Sondeo: {q.sondeo}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                    {readOnly ? (
+                      <p className="text-sm text-muted-foreground">Elige una entrevista para registrar los problemas.</p>
+                    ) : (
+                      <>
+                        <ProblemBoard problems={problemsApi.problems} api={problemsApi} processes={tasks.map((t) => ({ id: t.process_id, nombre: t.nombre }))}
+                          stepsOf={stepsApi.stepsOf} onMarkStep={(pid, sid) => stepsApi.patch(pid, sid, { problema: true })} />
+                        {problemsApi.problems.length === 0 && (
+                          <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                            <input type="checkbox" checked={checks.has(keyOf(step.index, 0))} onChange={(e) => toggle(keyOf(step.index, 0), e.target.checked)} />
+                            No se reportaron problemas en esta entrevista
+                          </label>
+                        )}
+                      </>
+                    )}
+                    {(() => {
+                      const legacy = s.preguntas.map((q, qi) => ({ q, a: answers[keyOf(step.index, qi)] })).filter((x) => x.a?.respuesta.trim());
+                      return legacy.length > 0 && (
+                        <details className="rounded-xl border bg-card p-4 text-sm">
+                          <summary className="cursor-pointer text-xs text-muted-foreground">Notas guardadas antes en estas preguntas ({legacy.length})</summary>
+                          <ul className="mt-2 space-y-2">
+                            {legacy.map(({ q, a }, i) => <li key={i}><p className="text-xs text-muted-foreground">{q.texto}</p><p className="whitespace-pre-wrap">{a!.respuesta}</p></li>)}
+                          </ul>
+                        </details>
+                      );
+                    })()}
+                  </>
+                ) : s.kind === "prioridades" ? (
+                  <>
+                    <details className="rounded-xl border bg-card p-4">
+                      <summary className="cursor-pointer text-sm font-medium text-muted-foreground">Preguntas guía para la conversación</summary>
+                      <ul className="mt-3 space-y-2 text-sm">
+                        {s.preguntas.map((q, qi) => (
+                          <li key={qi} className="space-y-1">
+                            <p>{qi + 1}. {q.texto}</p>
+                            {q.sondeo && <p className="text-xs text-muted-foreground">Sondeo: {q.sondeo}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                    {readOnly ? (
+                      <p className="text-sm text-muted-foreground">Elige una entrevista para registrar prioridades y condiciones.</p>
+                    ) : (
+                      <PriorityBoard tipo={tipo} tasks={tasks} onPatch={patchTask} area={area} onArea={patchArea}
+                        approvers={[...new Set(props.peopleNames)]} goInventory={() => goTo(guide.secciones.findIndex((x) => x.kind === "inventario") + 1)} />
+                    )}
+                    {tipo === "trabajador" && !readOnly && (
+                      <QuestionCard q={{ texto: "Otra idea o comentario general (si no es de una tarea en particular)" }} index={0} k={keyOf(step.index, 0)}
+                        a={answers[keyOf(step.index, 0)] ?? EMPTY} readOnly={readOnly} onChange={change} onFlush={flush} />
+                    )}
+                    {s.preguntas.some((q) => q.control) && (
+                      <div className="rounded-xl border bg-card p-4">
+                        <ul className="space-y-2">
+                          {s.preguntas.map((q, qi) => q.control ? (
+                            <li key={qi}><ControlItem q={q} k={keyOf(step.index, qi)} a={answers[keyOf(step.index, qi)] ?? EMPTY} checked={checks.has(keyOf(step.index, qi))}
+                              readOnly={readOnly} onChange={change} onFlush={flush} onToggle={toggle} /></li>
+                          ) : null)}
+                        </ul>
+                      </div>
+                    )}
+                    {tipo === "encargado" && (() => {
+                      const legacy = s.preguntas.map((q, qi) => ({ q, a: answers[keyOf(step.index, qi)] })).filter((x) => x.a?.respuesta.trim());
+                      return legacy.length > 0 && (
+                        <details className="rounded-xl border bg-card p-4 text-sm">
+                          <summary className="cursor-pointer text-xs text-muted-foreground">Notas guardadas antes en estas preguntas ({legacy.length})</summary>
+                          <ul className="mt-2 space-y-2">
+                            {legacy.map(({ q, a }, i) => <li key={i}><p className="text-xs text-muted-foreground">{q.texto}</p><p className="whitespace-pre-wrap">{a!.respuesta}</p></li>)}
+                          </ul>
+                        </details>
+                      );
+                    })()}
+                  </>
                 ) : s.kind === "detalle" ? (
                   <>
                     <details className="rounded-xl border bg-card p-4">
@@ -547,6 +677,8 @@ export function InterviewLive(props: InterviewLiveProps) {
                   <p className="text-sm text-muted-foreground">
                     Procesos vinculados: <span className="font-mono text-foreground">{linked.length}</span>. Tiempo total medido: <span className="font-mono text-foreground">{mmss(totalSecs)}</span>
                     {totalSecs >= 60 ? " (se guardará como duración de la entrevista)." : "."}
+                    {" "}Problemas registrados: <span className="font-mono text-foreground">{problemsApi.problems.length}</span>
+                    {problemsApi.problems.length > 0 && ` (${problemsApi.problems.filter((x) => x.process_id).length} ligados a un proceso${countByType(problemsApi.problems).riesgo_legal ? `, ${countByType(problemsApi.problems).riesgo_legal} de riesgo legal` : ""})`}.
                   </p>
                   {finishError && <p className="text-sm text-destructive">{finishError}</p>}
                   {finished || interview?.estado === "realizada" ? (
@@ -605,6 +737,34 @@ export function InterviewLive(props: InterviewLiveProps) {
                     </tbody>
                   </table>
                 )
+              ) : s.kind === "problemas" ? (
+                problemsApi.problems.length === 0 ? <p className="text-sm">{checks.has(keyOf(si, 0)) ? "No se reportaron problemas." : "—"}</p> : (
+                  <ul className="list-disc space-y-1 pl-5 text-sm">
+                    {problemsApi.problems.map((pr) => (
+                      <li key={pr.id}>
+                        <b>{PROBLEM_TYPE[pr.tipo]}:</b> {pr.texto}
+                        {" "}<span>({pr.process_id ? tasks.find((t) => t.process_id === pr.process_id)?.nombre ?? "proceso" : "toda el área"}
+                        {pr.step_id && pr.process_id ? `, paso ${stepsApi.stepsOf(pr.process_id).findIndex((x) => x.id === pr.step_id) + 1}` : ""})</span>
+                        {pr.nota ? ` — ${pr.nota}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : s.kind === "prioridades" ? (
+                <div className="space-y-1 text-sm">
+                  {tasks.filter((t) => t.prioridad || t.idea || t.restricciones.length || t.aprueba).sort((a, b) => (a.prioridad ?? 9) - (b.prioridad ?? 9)).map((t) => (
+                    <p key={t.process_id}>
+                      <b>{t.prioridad ? `${t.prioridad}. ` : ""}{t.nombre}</b>
+                      {t.idea ? ` · Idea: ${t.idea}` : ""}{t.restricciones.length ? ` · Restricciones: ${t.restricciones.join(", ")}` : ""}{t.aprueba ? ` · Aprueba: ${t.aprueba}` : ""}
+                    </p>
+                  ))}
+                  {(area.restricciones.length > 0 || area.aprueba) && (
+                    <p><b>Toda el área:</b>{area.restricciones.length ? ` restricciones: ${area.restricciones.join(", ")}` : ""}{area.aprueba ? ` · aprueba: ${area.aprueba}` : ""}</p>
+                  )}
+                  {s.preguntas.map((q, qi) => (q.control || answers[keyOf(si, qi)]?.respuesta?.trim()) ? (
+                    <p key={qi}>{q.texto}: {answerText(q, keyOf(si, qi))}</p>
+                  ) : null)}
+                </div>
               ) : s.kind === "detalle" ? (
                 starred.length === 0 ? <p className="text-sm">—</p> : starred.map((tg) => {
                   const st = stepsApi.stepsOf(tg.process_id), f = fieldsApi.fieldsOf(tg.process_id), sm = summarize(st);

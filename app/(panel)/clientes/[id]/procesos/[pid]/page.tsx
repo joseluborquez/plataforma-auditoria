@@ -2,13 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireOwner } from "@/lib/auth";
 import { one, rows } from "@/lib/db";
-import { CRITERIA, DECISION, INTERVIEW_TYPE, PROCESS_STAGE } from "@/lib/labels";
+import { CRITERIA, DECISION, PROBLEM_TYPE, INTERVIEW_TYPE, PROCESS_STAGE } from "@/lib/labels";
 import { EFFORT_RUBRIC, RUBRIC } from "@/lib/rubric";
 import { suggestStage } from "@/lib/stage";
 import { formatDateTime } from "@/lib/format";
 import { quadrantOf, QUADRANT_LABEL, suggestDecision, IMPACT_MAX } from "@/lib/scoring";
+import { conditionHints, scoreHints } from "@/lib/problems";
 import { topValues } from "@/lib/process-sheet";
-import type { Area, Interview, Person, Process, ProcessStep, Score } from "@/lib/types";
+import type { Area, Interview, InterviewProblem, Person, Process, ProcessStep, Score } from "@/lib/types";
 import { ProcessSheetStandalone } from "@/components/process-sheet-standalone";
 import { Field, Panel, SelectField, TextAreaField, opts } from "@/components/form";
 import { SubmitButton } from "@/components/submit-button";
@@ -21,22 +22,30 @@ const ONE_TO_FIVE = [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: Strin
 export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/procesos/[pid]">) {
   const { id, pid } = await params;
   const { supabase } = await requireOwner();
-  const [p, areas, score, interviews, people, links, meas, steps, allProcs] = await Promise.all([
+  const [p, areas, score, interviews, people, links, meas, steps, allProcs, problems] = await Promise.all([
     supabase.from("processes").select("*").eq("id", pid).eq("client_id", id).maybeSingle().then(one<Process>),
     supabase.from("areas").select("*").eq("client_id", id).order("nombre").then(rows<Area>),
     supabase.from("scores").select("*").eq("process_id", pid).maybeSingle().then(one<Score>),
     supabase.from("interviews").select("*").eq("client_id", id).order("fecha_hora", { ascending: false, nullsFirst: false }).then(rows<Interview>),
     supabase.from("people").select("*").eq("client_id", id).then(rows<Person>),
-    supabase.from("interview_processes").select("interview_id").eq("process_id", pid).then(rows<{ interview_id: string }>),
+    supabase.from("interview_processes").select("interview_id, prioridad, idea, restricciones, aprueba").eq("process_id", pid)
+      .then(rows<{ interview_id: string; prioridad: 1 | 2 | 3 | null; idea: string | null; restricciones: string[] | null; aprueba: string | null }>),
     supabase.from("time_measurements").select("id", { count: "exact", head: true }).eq("process_id", pid),
     supabase.from("process_steps").select("*").eq("process_id", pid).order("orden").then(rows<ProcessStep>),
     supabase.from("processes").select("sipoc").eq("client_id", id).then(rows<Pick<Process, "sipoc">>),
+    supabase.from("interview_problems").select("*").eq("process_id", pid).order("created_at").then(rows<InterviewProblem>),
   ]);
   if (!p) notFound();
   const sip = p.sipoc ?? { proveedores: [], entradas: [], proceso: [], salidas: [], clientes: [] };
   const sug = (k: "proveedores" | "entradas" | "salidas" | "clientes") => topValues(allProcs.map((x) => x.sipoc?.[k] ?? []));
   const personName = Object.fromEntries(people.map((x) => [x.id, x.nombre]));
   const linked = new Set(links.map((l) => l.interview_id));
+  const interviewLabel = (iid: string) => {
+    const i = interviews.find((x) => x.id === iid);
+    return i ? `${formatDateTime(i.fecha_hora)} · ${INTERVIEW_TYPE[i.tipo]} · ${personName[i.person_id ?? ""] ?? "Sin persona"}` : "Entrevista";
+  };
+  const hints = [...scoreHints(problems), ...conditionHints(links)];
+  const withConditions = links.filter((l) => l.prioridad || l.idea || l.aprueba || (l.restricciones?.length ?? 0) > 0);
   const stageHint = suggestStage(p, (meas.count ?? 0) > 0, !!score);
   const suggestion = score ? suggestDecision(score.impacto, score.esfuerzo, score.riesgo_legal) : null;
 
@@ -68,6 +77,44 @@ export default async function ProcesoPage({ params }: PageProps<"/clientes/[id]/
           tools={[...new Set(["Excel", "Correo", "WhatsApp", "Papel", "Sistema propio", ...(p.herramientas ?? [])])]}
           sipocSuggestions={{ proveedores: sug("proveedores"), entradas: sug("entradas"), salidas: sug("salidas"), clientes: sug("clientes") }} />
       </section>
+
+      {(problems.length > 0 || withConditions.length > 0) && (
+        <Panel title="Lo dicho en entrevistas sobre este proceso (solo tú lo ves)">
+          {hints.length > 0 && (
+            <ul className="mb-3 space-y-1 rounded-lg bg-muted p-3 text-sm">
+              {hints.map((h) => <li key={h}>💡 {h}</li>)}
+            </ul>
+          )}
+          {problems.length > 0 && (
+            <ul className="space-y-2 text-sm">
+              {problems.map((pr) => {
+                const idx = steps.findIndex((x) => x.id === pr.step_id);
+                return (
+                  <li key={pr.id} className="flex flex-wrap items-baseline gap-2">
+                    <Badge variant={pr.tipo === "riesgo_legal" ? "destructive" : "secondary"}>{PROBLEM_TYPE[pr.tipo]}</Badge>
+                    <span>{pr.texto}{idx >= 0 && <span className="text-muted-foreground"> (paso {idx + 1}: {steps[idx].texto})</span>}{pr.nota && <span className="text-muted-foreground"> — {pr.nota}</span>}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {withConditions.length > 0 && (
+            <ul className="mt-3 space-y-2 border-t pt-3 text-sm">
+              {withConditions.map((l) => (
+                <li key={l.interview_id}>
+                  <p className="text-xs text-muted-foreground">{interviewLabel(l.interview_id)}</p>
+                  <p>
+                    {l.prioridad && <Badge className="mr-2">Prioridad {l.prioridad}</Badge>}
+                    {l.idea && <span>Idea: {l.idea}. </span>}
+                    {(l.restricciones?.length ?? 0) > 0 && <span>Restricciones: {l.restricciones!.join(", ")}. </span>}
+                    {l.aprueba && <span>Aprueba: {l.aprueba}.</span>}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      )}
 
       <Panel title="Entrevistas donde surgió este proceso (solo tú lo ves)">
         <ul className="mb-3 space-y-1 text-sm">

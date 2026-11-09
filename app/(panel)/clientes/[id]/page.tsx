@@ -1,7 +1,8 @@
 import { requireOwner } from "@/lib/auth";
 import { one, rows } from "@/lib/db";
 import { formatHours } from "@/lib/format";
-import type { Area, Client, Interview, Person, TimeLog } from "@/lib/types";
+import { PROBLEM_TYPE } from "@/lib/labels";
+import type { Area, Client, Interview, InterviewProblem, Person, TimeLog } from "@/lib/types";
 import { Empty, Field, Panel, SelectField, TextAreaField } from "@/components/form";
 import { SubmitButton } from "@/components/submit-button";
 import { ConfirmDelete } from "@/components/confirm-delete";
@@ -14,13 +15,15 @@ import {
 export default async function ResumenPage({ params }: PageProps<"/clientes/[id]">) {
   const { id } = await params;
   const { supabase } = await requireOwner();
-  const [client, areas, people, interviews, logs, procCount] = await Promise.all([
+  const [client, areas, people, interviews, logs, procCount, general] = await Promise.all([
     supabase.from("clients").select("*").eq("id", id).maybeSingle().then(one<Client>),
     supabase.from("areas").select("*").eq("client_id", id).order("nombre").then(rows<Area>),
     supabase.from("people").select("*").eq("client_id", id).order("nombre").then(rows<Person>),
     supabase.from("interviews").select("*").eq("client_id", id).then(rows<Interview>),
     supabase.from("time_log").select("*").eq("client_id", id).then(rows<TimeLog>),
     supabase.from("processes").select("id", { count: "exact", head: true }).eq("client_id", id),
+    supabase.from("interview_problems").select("*, interviews!inner(client_id, area_id)").eq("interviews.client_id", id).is("process_id", null)
+      .then(rows<InterviewProblem & { interviews: { area_id: string | null } | { area_id: string | null }[] }>),
   ]);
   if (!client) return null;
   const isEncargado = (p: Person) => p.es_encargado || areas.some((a) => a.encargado_id === p.id);
@@ -110,6 +113,32 @@ export default async function ResumenPage({ params }: PageProps<"/clientes/[id]"
           </form>
         </Panel>
       </div>
+
+      {(general.length > 0 || interviews.some((i) => (i.restricciones?.length ?? 0) > 0 || i.aprueba)) && (
+        <Panel title="Hallazgos generales del área (de las entrevistas, solo tú los ves)">
+          <div className="space-y-4">
+            {areas.map((a) => {
+              const gp = general.filter((x) => (Array.isArray(x.interviews) ? x.interviews[0] : x.interviews)?.area_id === a.id);
+              const ints = interviews.filter((i) => i.area_id === a.id && ((i.restricciones?.length ?? 0) > 0 || i.aprueba));
+              if (gp.length === 0 && ints.length === 0) return null;
+              return (
+                <div key={a.id} className="space-y-1.5">
+                  <p className="text-sm font-medium">{a.nombre}</p>
+                  <ul className="space-y-1 text-sm">
+                    {gp.map((x) => <li key={x.id} className="flex flex-wrap items-baseline gap-2"><Badge variant="secondary">{PROBLEM_TYPE[x.tipo]}</Badge><span>{x.texto}{x.nota && <span className="text-muted-foreground"> — {x.nota}</span>}</span></li>)}
+                    {ints.map((i) => (
+                      <li key={i.id} className="text-muted-foreground">
+                        {i.restricciones.length > 0 && <>Restricciones: <span className="text-foreground">{i.restricciones.join(", ")}</span>. </>}
+                        {i.aprueba && <>Aprueba los cambios: <span className="text-foreground">{i.aprueba}</span>.</>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      )}
 
       <Panel title="Datos del cliente">
         <form action={updateClientAction.bind(null, id)} className="grid gap-3 sm:grid-cols-2">
